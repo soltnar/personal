@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Аналитика персонала по проходной</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <main class="app">
+    <div class="titleRow">
+      <h1>Количество работающего персонала в день</h1>
+      <span class="versionBadge">Версия: <span id="appVersion"></span></span>
+    </div>
+    <p class="subtitle">Источник данных: проходная. Смена: больше 7 часов = 1, до 7 часов = 0.5.</p>
+
+    <section class="panel uploadGrid">
+      <div>
+        <label class="label" for="attendanceInput">Файл проходной</label>
+        <input id="attendanceInput" type="file" accept=".xlsx,.xls" />
+      </div>
+      <div>
+        <label class="label" for="staffInput">Список сотрудников (для ресторана по ФИО)</label>
+        <input id="staffInput" type="file" accept=".xlsx,.xls" />
+      </div>
+      <p id="status" class="status">Загрузите файл проходной.</p>
+    </section>
+
+    <section class="panel filters">
+      <div>
+        <label class="label" for="dateSelect">Даты (мультивыбор)</label>
+        <select id="dateSelect" multiple size="6"></select>
+      </div>
+
+      <div>
+        <label class="label" for="restaurantSelect">Рестораны (мультивыбор)</label>
+        <select id="restaurantSelect" multiple size="10"></select>
+      </div>
+
+      <div>
+        <span class="label">Группы должностей</span>
+        <label class="check"><input type="checkbox" class="groupCheck" value="Кухня" checked> Кухня (повара, шеф-повара, су-шефы)</label>
+        <label class="check"><input type="checkbox" class="groupCheck" value="Зал" checked> Зал (официанты, менеджеры зала, мойки)</label>
+        <label class="check"><input type="checkbox" class="groupCheck" value="Доставка" checked> Доставка (логисты, курьеры, водители)</label>
+      </div>
+    </section>
+
+    <section class="panel actions">
+      <button id="calcBtn">Рассчитать</button>
+      <button id="csvBtn" disabled>Скачать CSV</button>
+      <button id="xlsxBtn" disabled>Скачать Excel (матрица)</button>
+    </section>
+
+    <section class="panel">
+      <div id="summary" class="summary">Нет данных для отображения.</div>
+      <div class="tableWrap">
+        <table id="resultTable">
+          <thead>
+            <tr>
+              <th>Детали</th>
+              <th>Дата</th>
+              <th>Ресторан</th>
+              <th>Кухня</th>
+              <th>Зал</th>
+              <th>Доставка</th>
+              <th>Итого</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer">История версий: файл `versions.md`</footer>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
