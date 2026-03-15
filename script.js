@@ -1,4 +1,5 @@
-const APP_VERSION = "1.4.1";
+const APP_VERSION = "1.5.0";
+const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const attendanceInput = document.getElementById("attendanceInput");
 const staffInput = document.getElementById("staffInput");
@@ -26,6 +27,19 @@ function excelDateToISO(value) {
   if (!Number.isFinite(days)) return "";
   const utcDays = Math.floor(days - 25569);
   const utcValue = utcDays * 86400;
+  const date = new Date(utcValue * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function excelDateToSerialDay(value) {
+  const days = Number(value);
+  if (!Number.isFinite(days)) return NaN;
+  return Math.floor(days);
+}
+
+function serialDayToISO(serialDay) {
+  const utcValue = (serialDay - 25569) * 86400;
   const date = new Date(utcValue * 1000);
   if (Number.isNaN(date.getTime())) return "";
   return date.toISOString().slice(0, 10);
@@ -175,11 +189,15 @@ function parseAttendanceWorkbook(arrayBuffer) {
     const source = String(row[idx.source] || "").trim();
     if (source !== "Проходная") continue;
 
-    const dateIso = excelDateToISO(row[idx.date]);
-    if (!dateIso) continue;
+    const dateSerialDay = excelDateToSerialDay(row[idx.date]);
+    if (!Number.isFinite(dateSerialDay)) continue;
 
     const timeSec = parseExcelTimeToSeconds(row[idx.time]);
     if (!Number.isFinite(timeSec)) continue;
+    const operationalSerialDay = timeSec < DAY_CUTOFF_SECONDS ? dateSerialDay - 1 : dateSerialDay;
+    const dateIso = serialDayToISO(operationalSerialDay);
+    if (!dateIso) continue;
+    const absSec = dateSerialDay * 86400 + timeSec;
 
     const roleRaw = String(row[idx.role] || "").trim();
     const group = classifyRole(roleRaw);
@@ -194,6 +212,7 @@ function parseAttendanceWorkbook(arrayBuffer) {
     parsed.push({
       dateIso,
       timeSec,
+      absSec,
       person,
       personKey: normalizeFio(person),
       group,
@@ -229,7 +248,7 @@ function rebuildMappedRecords() {
 }
 
 function calcWorkedSeconds(events) {
-  const sorted = [...events].sort((a, b) => a.timeSec - b.timeSec);
+  const sorted = [...events].sort((a, b) => a.absSec - b.absSec);
   let total = 0;
   let inWork = false;
   let startSec = 0;
@@ -237,18 +256,18 @@ function calcWorkedSeconds(events) {
   sorted.forEach((e) => {
     if (e.direction === "Вход") {
       inWork = true;
-      startSec = e.timeSec;
+      startSec = e.absSec;
       return;
     }
 
-    if (e.direction === "Выход" && inWork && e.timeSec >= startSec) {
-      total += e.timeSec - startSec;
+    if (e.direction === "Выход" && inWork && e.absSec >= startSec) {
+      total += e.absSec - startSec;
       inWork = false;
     }
   });
 
   if (total === 0 && sorted.length >= 2) {
-    const fallback = sorted[sorted.length - 1].timeSec - sorted[0].timeSec;
+    const fallback = sorted[sorted.length - 1].absSec - sorted[0].absSec;
     if (fallback > 0) total = fallback;
   }
 
@@ -285,7 +304,7 @@ function calculate(records) {
         events: []
       });
     }
-    personDay.get(key).events.push({ direction: r.direction, timeSec: r.timeSec });
+    personDay.get(key).events.push({ direction: r.direction, absSec: r.absSec });
   });
 
   const restaurantDay = new Map();
