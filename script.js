@@ -1,4 +1,4 @@
-const APP_VERSION = "1.5.1";
+const APP_VERSION = "1.5.2";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const attendanceInput = document.getElementById("attendanceInput");

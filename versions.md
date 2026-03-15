@@ -1,5 +1,8 @@
 # Версии
 
+## 1.5.2 (2026-03-15)
+- Добавлен cache-busting для `script.js` (`script.js?v=1.5.2`), чтобы сайт не оставался на старой версии из кэша браузера.
+
 ## 1.5.1 (2026-03-15)
 - Добавлен workflow `.github/workflows/deploy-pages.yml` для автопубликации GitHub Pages при `push` в `main`.
 
