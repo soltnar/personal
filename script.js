@@ -1,4 +1,4 @@
-const APP_VERSION = "1.5.2";
+const APP_VERSION = "1.6.0";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const attendanceInput = document.getElementById("attendanceInput");
@@ -84,6 +84,7 @@ function classifyRole(roleText) {
   if (/повар|шеф/.test(role)) return "Кухня";
   if (/официант|менеджер зала|мойщ|мойк/.test(role)) return "Зал";
   if (/логист|курьер|водител/.test(role)) return "Доставка";
+  if (/барменедж|барбэк|барбек|бармен/.test(role)) return "Бар";
   return null;
 }
 
@@ -322,11 +323,13 @@ function calculate(records) {
         kitchen: 0,
         hall: 0,
         delivery: 0,
+        bar: 0,
         total: 0,
         details: {
           kitchen: [],
           hall: [],
-          delivery: []
+          delivery: [],
+          bar: []
         }
       });
     }
@@ -344,6 +347,10 @@ function calculate(records) {
       row.delivery += shiftValue;
       row.details.delivery.push({ person: item.person, shift: shiftValue });
     }
+    if (item.group === "Бар") {
+      row.bar += shiftValue;
+      row.details.bar.push({ person: item.person, shift: shiftValue });
+    }
     row.total += shiftValue;
   });
 
@@ -351,6 +358,7 @@ function calculate(records) {
     row.details.kitchen.sort((a, b) => a.person.localeCompare(b.person, "ru"));
     row.details.hall.sort((a, b) => a.person.localeCompare(b.person, "ru"));
     row.details.delivery.sort((a, b) => a.person.localeCompare(b.person, "ru"));
+    row.details.bar.sort((a, b) => a.person.localeCompare(b.person, "ru"));
     return row;
   }).sort((a, b) => {
     if (a.dateIso !== b.dateIso) return a.dateIso.localeCompare(b.dateIso);
@@ -380,6 +388,10 @@ function buildDetailsHtml(row) {
         <h4>Доставка (${formatShift(row.delivery)})</h4>
         ${renderPeopleList(row.details.delivery)}
       </div>
+      <div class="detailsCol">
+        <h4>Бар (${formatShift(row.bar)})</h4>
+        ${renderPeopleList(row.details.bar)}
+      </div>
     </div>
   `;
 }
@@ -397,11 +409,13 @@ function renderTable(rows) {
   let totalKitchen = 0;
   let totalHall = 0;
   let totalDelivery = 0;
+  let totalBar = 0;
 
   rows.forEach((r) => {
     totalKitchen += r.kitchen;
     totalHall += r.hall;
     totalDelivery += r.delivery;
+    totalBar += r.bar;
 
     const tr = document.createElement("tr");
     tr.className = "mainRow";
@@ -410,7 +424,7 @@ function renderTable(rows) {
     detailsTr.style.display = "none";
 
     const detailsCell = document.createElement("td");
-    detailsCell.colSpan = 7;
+    detailsCell.colSpan = 8;
     detailsCell.innerHTML = buildDetailsHtml(r);
     detailsTr.appendChild(detailsCell);
 
@@ -422,6 +436,7 @@ function renderTable(rows) {
       <td>${formatShift(r.kitchen)}</td>
       <td>${formatShift(r.hall)}</td>
       <td>${formatShift(r.delivery)}</td>
+      <td>${formatShift(r.bar)}</td>
       <td>${formatShift(r.total)}</td>
     `;
     tableBody.appendChild(tr);
@@ -434,13 +449,13 @@ function renderTable(rows) {
     });
   });
 
-  summaryEl.textContent = `Строк: ${rows.length}. Кухня: ${formatShift(totalKitchen)}, Зал: ${formatShift(totalHall)}, Доставка: ${formatShift(totalDelivery)}, Всего смен: ${formatShift(totalKitchen + totalHall + totalDelivery)}.`;
+  summaryEl.textContent = `Строк: ${rows.length}. Кухня: ${formatShift(totalKitchen)}, Зал: ${formatShift(totalHall)}, Доставка: ${formatShift(totalDelivery)}, Бар: ${formatShift(totalBar)}, Всего смен: ${formatShift(totalKitchen + totalHall + totalDelivery + totalBar)}.`;
   csvBtn.disabled = false;
   xlsxBtn.disabled = false;
 }
 
 function toCSV(rows) {
-  const head = ["Дата", "Ресторан", "Кухня", "Зал", "Доставка", "Итого"];
+  const head = ["Дата", "Ресторан", "Кухня", "Зал", "Доставка", "Бар", "Итого"];
   const lines = [head.join(";")];
   rows.forEach((r) => {
     lines.push([
@@ -449,6 +464,7 @@ function toCSV(rows) {
       formatShift(r.kitchen),
       formatShift(r.hall),
       formatShift(r.delivery),
+      formatShift(r.bar),
       formatShift(r.total)
     ].join(";"));
   });
@@ -487,6 +503,9 @@ function exportExcelPivot(rows) {
   }
   if (groups.includes("Доставка")) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "delivery")), "Доставка");
+  }
+  if (groups.includes("Бар")) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "bar")), "Бар");
   }
 
   const dateLabel = new Date().toISOString().slice(0, 10);
