@@ -1,4 +1,4 @@
-const APP_VERSION = "1.6.1";
+const APP_VERSION = "1.6.2";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const attendanceInput = document.getElementById("attendanceInput");
@@ -17,6 +17,7 @@ let baseRecords = [];
 let mappedRecords = [];
 let staffRestaurantMap = new Map();
 let staffConflicts = 0;
+let staffConflictKeys = new Set();
 let mappingStats = { matched: 0, total: 0 };
 let lastResultRows = [];
 
@@ -145,6 +146,7 @@ function parseStaffWorkbook(arrayBuffer) {
 
   const map = new Map();
   let conflicts = 0;
+  const conflictKeys = new Set();
 
   for (let i = 1; i < rows.length; i += 1) {
     const row = rows[i];
@@ -159,10 +161,11 @@ function parseStaffWorkbook(arrayBuffer) {
       map.set(key, restaurant);
     } else if (map.get(key) !== restaurant) {
       conflicts += 1;
+      conflictKeys.add(key);
     }
   }
 
-  return { map, conflicts };
+  return { map, conflicts, conflictKeys };
 }
 
 function parseAttendanceWorkbook(arrayBuffer) {
@@ -248,7 +251,8 @@ function rebuildMappedRecords() {
 
     return {
       ...r,
-      restaurant: mappedRestaurant || "Не определен в списке сотрудников"
+      restaurant: mappedRestaurant || "Не определен в списке сотрудников",
+      hasConflict: staffConflictKeys.has(r.personKey)
     };
   });
 
@@ -316,8 +320,12 @@ function calculate(records) {
         restaurant: r.restaurant,
         group: r.group,
         person: r.person,
+        hasConflict: false,
         events: []
       });
+    }
+    if (r.hasConflict) {
+      personDay.get(key).hasConflict = true;
     }
     personDay.get(key).events.push({ direction: r.direction, absSec: r.absSec });
   });
@@ -339,6 +347,7 @@ function calculate(records) {
         delivery: 0,
         bar: 0,
         total: 0,
+        hasConflict: false,
         details: {
           kitchen: [],
           hall: [],
@@ -351,20 +360,21 @@ function calculate(records) {
     const row = restaurantDay.get(key);
     if (item.group === "Кухня") {
       row.kitchen += shiftValue;
-      row.details.kitchen.push({ person: item.person, shift: shiftValue });
+      row.details.kitchen.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
     }
     if (item.group === "Зал") {
       row.hall += shiftValue;
-      row.details.hall.push({ person: item.person, shift: shiftValue });
+      row.details.hall.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
     }
     if (item.group === "Доставка") {
       row.delivery += shiftValue;
-      row.details.delivery.push({ person: item.person, shift: shiftValue });
+      row.details.delivery.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
     }
     if (item.group === "Бар") {
       row.bar += shiftValue;
-      row.details.bar.push({ person: item.person, shift: shiftValue });
+      row.details.bar.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
     }
+    if (item.hasConflict) row.hasConflict = true;
     row.total += shiftValue;
   });
 
@@ -383,7 +393,7 @@ function calculate(records) {
 function renderPeopleList(items) {
   if (!items.length) return `<div class="emptyList">Нет сотрудников</div>`;
   return `<ul>${items
-    .map((p) => `<li>${escapeHtml(p.person)} — ${formatShift(p.shift)}</li>`)
+    .map((p) => `<li>${escapeHtml(p.person)} — ${formatShift(p.shift)}${p.hasConflict ? ' <span class="conflictBadge">конфликт ФИО</span>' : ''}</li>`)
     .join("")}</ul>`;
 }
 
@@ -446,7 +456,7 @@ function renderTable(rows) {
     tr.innerHTML = `
       <td><button class="detailBtn" id="${toggleId}" type="button">Показать</button></td>
       <td>${prettyDate(r.dateIso)}</td>
-      <td>${escapeHtml(r.restaurant)}</td>
+      <td>${escapeHtml(r.restaurant)}${r.hasConflict ? ' <span class="conflictBadge">есть конфликт</span>' : ''}</td>
       <td>${formatShift(r.kitchen)}</td>
       <td>${formatShift(r.hall)}</td>
       <td>${formatShift(r.delivery)}</td>
@@ -577,6 +587,7 @@ staffInput.addEventListener("change", async (e) => {
     const staff = parseStaffWorkbook(buf);
     staffRestaurantMap = staff.map;
     staffConflicts = staff.conflicts;
+    staffConflictKeys = staff.conflictKeys;
 
     if (baseRecords.length) {
       rebuildMappedRecords();
@@ -588,6 +599,7 @@ staffInput.addEventListener("change", async (e) => {
     statusEl.textContent = `Ошибка файла сотрудников: ${err.message}`;
     staffRestaurantMap = new Map();
     staffConflicts = 0;
+    staffConflictKeys = new Set();
     if (baseRecords.length) {
       rebuildMappedRecords();
       refreshStatus();

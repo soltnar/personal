@@ -194,3 +194,15 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+.conflictBadge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fff3cd;
+  color: #7a4d00;
+  border: 1px solid #f2d186;
+  font-size: 11px;
+  vertical-align: middle;
+}
