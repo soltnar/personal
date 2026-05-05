@@ -1,4 +1,4 @@
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.6.1";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const attendanceInput = document.getElementById("attendanceInput");
@@ -121,6 +121,14 @@ function fillMultiSelect(selectEl, values, selectedValues = []) {
   });
 }
 
+function findHeaderIndex(header, candidates) {
+  for (const name of candidates) {
+    const idx = header.indexOf(name);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
 function parseStaffWorkbook(arrayBuffer) {
   const wb = XLSX.read(arrayBuffer, { type: "array" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
@@ -166,21 +174,25 @@ function parseAttendanceWorkbook(arrayBuffer) {
 
   const header = rows[0].map((h) => String(h).trim());
   const idx = {
-    date: header.indexOf("Дата"),
-    time: header.indexOf("Время"),
-    source: header.indexOf("Источник"),
-    direction: header.indexOf("Направление"),
-    surname: header.indexOf("Фамилия"),
-    name: header.indexOf("Имя"),
-    middle: header.indexOf("Отчество"),
-    role: header.indexOf("Должность"),
-    address: header.indexOf("Адрес")
+    date: findHeaderIndex(header, ["Дата"]),
+    time: findHeaderIndex(header, ["Время"]),
+    source: findHeaderIndex(header, ["Источник"]),
+    direction: findHeaderIndex(header, ["Направление"]),
+    surname: findHeaderIndex(header, ["Фамилия"]),
+    name: findHeaderIndex(header, ["Имя"]),
+    middle: findHeaderIndex(header, ["Отчество"]),
+    fio: findHeaderIndex(header, ["ФИО"]),
+    role: findHeaderIndex(header, ["Должность"]),
+    address: findHeaderIndex(header, ["Адрес"])
   };
 
-  const required = ["date", "time", "source", "direction", "surname", "name", "role", "address"];
+  const required = ["date", "time", "source", "direction", "role", "address"];
   const missing = required.filter((k) => idx[k] === -1);
   if (missing.length) {
     throw new Error(`Не найдены нужные колонки в файле проходной: ${missing.join(", ")}`);
+  }
+  if (idx.fio === -1 && (idx.surname === -1 || idx.name === -1)) {
+    throw new Error("Не найдены колонки ФИО или Фамилия+Имя в файле проходной.");
   }
 
   const parsed = [];
@@ -204,7 +216,9 @@ function parseAttendanceWorkbook(arrayBuffer) {
     const group = classifyRole(roleRaw);
     if (!group) continue;
 
-    const person = [row[idx.surname], row[idx.name], row[idx.middle]].filter(Boolean).join(" ").trim();
+    const person = idx.fio !== -1
+      ? String(row[idx.fio] || "").trim()
+      : [row[idx.surname], row[idx.name], row[idx.middle]].filter(Boolean).join(" ").trim();
     if (!person) continue;
 
     const direction = String(row[idx.direction] || "").trim();
