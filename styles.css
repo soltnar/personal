@@ -65,6 +65,10 @@ h1 {
   gap: 16px;
 }
 
+.uploadWide {
+  grid-column: 1 / -1;
+}
+
 .filters {
   display: grid;
   grid-template-columns: 1fr 2fr 2fr;
@@ -184,9 +188,49 @@ th {
   padding: 4px;
 }
 
+.panelTitle {
+  margin: 0 0 10px;
+  font-size: 22px;
+}
+
+.hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.gsGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+}
+
+.fieldLabel {
+  font-weight: 600;
+  display: block;
+}
+
+.fieldLabel input {
+  margin-top: 6px;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 9px 10px;
+}
+
+.manualList {
+  margin: 0;
+  padding-left: 18px;
+  color: #2c3940;
+}
+
+.manualList li {
+  margin-bottom: 7px;
+}
+
 @media (max-width: 900px) {
   .uploadGrid,
-  .filters {
+  .filters,
+  .gsGrid {
     grid-template-columns: 1fr;
   }
 

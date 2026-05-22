@@ -1,6 +1,7 @@
-const APP_VERSION = "1.6.2";
+const APP_VERSION = "1.7.0";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
+const universalInput = document.getElementById("universalInput");
 const attendanceInput = document.getElementById("attendanceInput");
 const staffInput = document.getElementById("staffInput");
 const statusEl = document.getElementById("status");
@@ -9,6 +10,11 @@ const restaurantSelect = document.getElementById("restaurantSelect");
 const calcBtn = document.getElementById("calcBtn");
 const csvBtn = document.getElementById("csvBtn");
 const xlsxBtn = document.getElementById("xlsxBtn");
+const gsSendBtn = document.getElementById("gsSendBtn");
+const gsWebhookUrlInput = document.getElementById("gsWebhookUrl");
+const gsSpreadsheetIdInput = document.getElementById("gsSpreadsheetId");
+const gsSheetNameInput = document.getElementById("gsSheetName");
+const gsStatusEl = document.getElementById("gsStatus");
 const summaryEl = document.getElementById("summary");
 const tableBody = document.querySelector("#resultTable tbody");
 const appVersionEl = document.getElementById("appVersion");
@@ -22,16 +28,6 @@ let mappingStats = { matched: 0, total: 0 };
 let lastResultRows = [];
 
 appVersionEl.textContent = APP_VERSION;
-
-function excelDateToISO(value) {
-  const days = Number(value);
-  if (!Number.isFinite(days)) return "";
-  const utcDays = Math.floor(days - 25569);
-  const utcValue = utcDays * 86400;
-  const date = new Date(utcValue * 1000);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
-}
 
 function excelDateToSerialDay(value) {
   const days = Number(value);
@@ -49,17 +45,12 @@ function serialDayToISO(serialDay) {
 function parseExcelTimeToSeconds(value) {
   if (value === null || value === undefined || value === "") return NaN;
   const numeric = Number(value);
-  if (Number.isFinite(numeric)) {
-    return Math.round(numeric * 24 * 3600);
-  }
+  if (Number.isFinite(numeric)) return Math.round(numeric * 24 * 3600);
 
   const text = String(value).trim();
   const m = text.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (!m) return NaN;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  const sec = Number(m[3] || 0);
-  return h * 3600 + min * 60 + sec;
+  return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3] || 0);
 }
 
 function prettyDate(iso) {
@@ -81,7 +72,6 @@ function normalizeFio(text) {
 
 function classifyRole(roleText) {
   const role = normalize(roleText);
-
   if (/повар|шеф/.test(role)) return "Кухня";
   if (/официант|менеджер зала|мойщ|мойк/.test(role)) return "Зал";
   if (/логист|курьер|водител/.test(role)) return "Доставка";
@@ -98,7 +88,7 @@ function escapeHtml(text) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
+    .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
 
@@ -130,10 +120,29 @@ function findHeaderIndex(header, candidates) {
   return -1;
 }
 
-function parseStaffWorkbook(arrayBuffer) {
+function readWorkbookRows(arrayBuffer) {
   const wb = XLSX.read(arrayBuffer, { type: "array" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
+  return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
+}
+
+function detectFileType(rows) {
+  if (!rows.length) return "unknown";
+  const header = rows[0].map((h) => String(h).trim());
+  const has = (name) => header.includes(name);
+
+  if (has("Источник") && has("Направление") && has("Дата") && has("Время") && (has("ФИО") || (has("Фамилия") && has("Имя")))) {
+    return "attendance";
+  }
+
+  if (has("ФИО") && has("Название подразделения")) {
+    return "staff";
+  }
+
+  return "unknown";
+}
+
+function parseStaffRows(rows) {
   if (!rows.length) throw new Error("Файл сотрудников пустой.");
 
   const header = rows[0].map((h) => String(h).trim());
@@ -168,11 +177,7 @@ function parseStaffWorkbook(arrayBuffer) {
   return { map, conflicts, conflictKeys };
 }
 
-function parseAttendanceWorkbook(arrayBuffer) {
-  const wb = XLSX.read(arrayBuffer, { type: "array" });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
-
+function parseAttendanceRows(rows) {
   if (!rows.length) return [];
 
   const header = rows[0].map((h) => String(h).trim());
@@ -210,6 +215,7 @@ function parseAttendanceWorkbook(arrayBuffer) {
 
     const timeSec = parseExcelTimeToSeconds(row[idx.time]);
     if (!Number.isFinite(timeSec)) continue;
+
     const operationalSerialDay = timeSec < DAY_CUTOFF_SECONDS ? dateSerialDay - 1 : dateSerialDay;
     const dateIso = serialDayToISO(operationalSerialDay);
     if (!dateIso) continue;
@@ -229,7 +235,6 @@ function parseAttendanceWorkbook(arrayBuffer) {
 
     parsed.push({
       dateIso,
-      timeSec,
       absSec,
       person,
       personKey: normalizeFio(person),
@@ -240,6 +245,44 @@ function parseAttendanceWorkbook(arrayBuffer) {
   }
 
   return parsed;
+}
+
+function applyStaffData(staffData) {
+  staffRestaurantMap = staffData.map;
+  staffConflicts = staffData.conflicts;
+  staffConflictKeys = staffData.conflictKeys;
+  if (baseRecords.length) rebuildMappedRecords();
+  refreshStatus();
+}
+
+function applyAttendanceData(records) {
+  baseRecords = records;
+  rebuildMappedRecords();
+  lastResultRows = [];
+  tableBody.innerHTML = "";
+  summaryEl.textContent = "Выберите фильтры и нажмите «Рассчитать».";
+  csvBtn.disabled = true;
+  xlsxBtn.disabled = true;
+  gsSendBtn.disabled = true;
+  refreshStatus();
+}
+
+async function processWorkbookFile(file) {
+  const buf = await file.arrayBuffer();
+  const rows = readWorkbookRows(buf);
+  const type = detectFileType(rows);
+
+  if (type === "attendance") {
+    applyAttendanceData(parseAttendanceRows(rows));
+    return { file: file.name, type: "проходная" };
+  }
+
+  if (type === "staff") {
+    applyStaffData(parseStaffRows(rows));
+    return { file: file.name, type: "сотрудники" };
+  }
+
+  return { file: file.name, type: "не распознан" };
 }
 
 function rebuildMappedRecords() {
@@ -278,7 +321,6 @@ function calcWorkedSeconds(events) {
       startSec = e.absSec;
       return;
     }
-
     if (e.direction === "Выход" && inWork && e.absSec >= startSec) {
       total += e.absSec - startSec;
       inWork = false;
@@ -304,10 +346,7 @@ function calculate(records) {
   const selectedGroups = new Set(getCheckedGroups());
 
   const filtered = records.filter(
-    (r) =>
-      selectedDates.includes(r.dateIso) &&
-      selectedRestaurants.includes(r.restaurant) &&
-      selectedGroups.has(r.group)
+    (r) => selectedDates.includes(r.dateIso) && selectedRestaurants.includes(r.restaurant) && selectedGroups.has(r.group)
   );
 
   const personDay = new Map();
@@ -324,17 +363,14 @@ function calculate(records) {
         events: []
       });
     }
-    if (r.hasConflict) {
-      personDay.get(key).hasConflict = true;
-    }
+    if (r.hasConflict) personDay.get(key).hasConflict = true;
     personDay.get(key).events.push({ direction: r.direction, absSec: r.absSec });
   });
 
   const restaurantDay = new Map();
 
   Array.from(personDay.values()).forEach((item) => {
-    const workedSeconds = calcWorkedSeconds(item.events);
-    const shiftValue = workedSecondsToShift(workedSeconds);
+    const shiftValue = workedSecondsToShift(calcWorkedSeconds(item.events));
     if (shiftValue === 0) return;
 
     const key = `${item.dateIso}||${item.restaurant}`;
@@ -348,74 +384,47 @@ function calculate(records) {
         bar: 0,
         total: 0,
         hasConflict: false,
-        details: {
-          kitchen: [],
-          hall: [],
-          delivery: [],
-          bar: []
-        }
+        details: { kitchen: [], hall: [], delivery: [], bar: [] }
       });
     }
 
     const row = restaurantDay.get(key);
-    if (item.group === "Кухня") {
-      row.kitchen += shiftValue;
-      row.details.kitchen.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
-    }
-    if (item.group === "Зал") {
-      row.hall += shiftValue;
-      row.details.hall.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
-    }
-    if (item.group === "Доставка") {
-      row.delivery += shiftValue;
-      row.details.delivery.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
-    }
-    if (item.group === "Бар") {
-      row.bar += shiftValue;
-      row.details.bar.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
-    }
+    if (item.group === "Кухня") row.details.kitchen.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
+    if (item.group === "Зал") row.details.hall.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
+    if (item.group === "Доставка") row.details.delivery.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
+    if (item.group === "Бар") row.details.bar.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
+
+    if (item.group === "Кухня") row.kitchen += shiftValue;
+    if (item.group === "Зал") row.hall += shiftValue;
+    if (item.group === "Доставка") row.delivery += shiftValue;
+    if (item.group === "Бар") row.bar += shiftValue;
     if (item.hasConflict) row.hasConflict = true;
     row.total += shiftValue;
   });
 
-  return Array.from(restaurantDay.values()).map((row) => {
-    row.details.kitchen.sort((a, b) => a.person.localeCompare(b.person, "ru"));
-    row.details.hall.sort((a, b) => a.person.localeCompare(b.person, "ru"));
-    row.details.delivery.sort((a, b) => a.person.localeCompare(b.person, "ru"));
-    row.details.bar.sort((a, b) => a.person.localeCompare(b.person, "ru"));
-    return row;
-  }).sort((a, b) => {
-    if (a.dateIso !== b.dateIso) return a.dateIso.localeCompare(b.dateIso);
-    return a.restaurant.localeCompare(b.restaurant, "ru");
-  });
+  return Array.from(restaurantDay.values())
+    .map((row) => {
+      row.details.kitchen.sort((a, b) => a.person.localeCompare(b.person, "ru"));
+      row.details.hall.sort((a, b) => a.person.localeCompare(b.person, "ru"));
+      row.details.delivery.sort((a, b) => a.person.localeCompare(b.person, "ru"));
+      row.details.bar.sort((a, b) => a.person.localeCompare(b.person, "ru"));
+      return row;
+    })
+    .sort((a, b) => (a.dateIso !== b.dateIso ? a.dateIso.localeCompare(b.dateIso) : a.restaurant.localeCompare(b.restaurant, "ru")));
 }
 
 function renderPeopleList(items) {
   if (!items.length) return `<div class="emptyList">Нет сотрудников</div>`;
-  return `<ul>${items
-    .map((p) => `<li>${escapeHtml(p.person)} — ${formatShift(p.shift)}${p.hasConflict ? ' <span class="conflictBadge">конфликт ФИО</span>' : ''}</li>`)
-    .join("")}</ul>`;
+  return `<ul>${items.map((p) => `<li>${escapeHtml(p.person)} — ${formatShift(p.shift)}${p.hasConflict ? ' <span class="conflictBadge">конфликт ФИО</span>' : ''}</li>`).join("")}</ul>`;
 }
 
 function buildDetailsHtml(row) {
   return `
     <div class="detailsWrap">
-      <div class="detailsCol">
-        <h4>Кухня (${formatShift(row.kitchen)})</h4>
-        ${renderPeopleList(row.details.kitchen)}
-      </div>
-      <div class="detailsCol">
-        <h4>Зал (${formatShift(row.hall)})</h4>
-        ${renderPeopleList(row.details.hall)}
-      </div>
-      <div class="detailsCol">
-        <h4>Доставка (${formatShift(row.delivery)})</h4>
-        ${renderPeopleList(row.details.delivery)}
-      </div>
-      <div class="detailsCol">
-        <h4>Бар (${formatShift(row.bar)})</h4>
-        ${renderPeopleList(row.details.bar)}
-      </div>
+      <div class="detailsCol"><h4>Кухня (${formatShift(row.kitchen)})</h4>${renderPeopleList(row.details.kitchen)}</div>
+      <div class="detailsCol"><h4>Зал (${formatShift(row.hall)})</h4>${renderPeopleList(row.details.hall)}</div>
+      <div class="detailsCol"><h4>Доставка (${formatShift(row.delivery)})</h4>${renderPeopleList(row.details.delivery)}</div>
+      <div class="detailsCol"><h4>Бар (${formatShift(row.bar)})</h4>${renderPeopleList(row.details.bar)}</div>
     </div>
   `;
 }
@@ -427,6 +436,7 @@ function renderTable(rows) {
     summaryEl.textContent = "По выбранным фильтрам данных нет.";
     csvBtn.disabled = true;
     xlsxBtn.disabled = true;
+    gsSendBtn.disabled = true;
     return;
   }
 
@@ -442,7 +452,6 @@ function renderTable(rows) {
     totalBar += r.bar;
 
     const tr = document.createElement("tr");
-    tr.className = "mainRow";
     const detailsTr = document.createElement("tr");
     detailsTr.className = "detailsRow";
     detailsTr.style.display = "none";
@@ -463,6 +472,7 @@ function renderTable(rows) {
       <td>${formatShift(r.bar)}</td>
       <td>${formatShift(r.total)}</td>
     `;
+
     tableBody.appendChild(tr);
     tableBody.appendChild(detailsTr);
 
@@ -476,6 +486,7 @@ function renderTable(rows) {
   summaryEl.textContent = `Строк: ${rows.length}. Кухня: ${formatShift(totalKitchen)}, Зал: ${formatShift(totalHall)}, Доставка: ${formatShift(totalDelivery)}, Бар: ${formatShift(totalBar)}, Всего смен: ${formatShift(totalKitchen + totalHall + totalDelivery + totalBar)}.`;
   csvBtn.disabled = false;
   xlsxBtn.disabled = false;
+  gsSendBtn.disabled = false;
 }
 
 function toCSV(rows) {
@@ -503,9 +514,7 @@ function buildMatrix(rows, fieldName) {
   const aoa = [["Ресторан", ...dates.map(prettyDate)]];
   restaurants.forEach((restaurant) => {
     const line = [restaurant];
-    dates.forEach((dateIso) => {
-      line.push(map.get(`${restaurant}||${dateIso}`) || 0);
-    });
+    dates.forEach((dateIso) => line.push(map.get(`${restaurant}||${dateIso}`) || 0));
     aoa.push(line);
   });
 
@@ -516,24 +525,66 @@ function exportExcelPivot(rows) {
   const groups = getCheckedGroups();
   const wb = XLSX.utils.book_new();
 
-  const totalSheet = XLSX.utils.aoa_to_sheet(buildMatrix(rows, "total"));
-  XLSX.utils.book_append_sheet(wb, totalSheet, "Итого");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "total")), "Итого");
+  if (groups.includes("Кухня")) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "kitchen")), "Кухня");
+  if (groups.includes("Зал")) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "hall")), "Зал");
+  if (groups.includes("Доставка")) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "delivery")), "Доставка");
+  if (groups.includes("Бар")) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "bar")), "Бар");
 
-  if (groups.includes("Кухня")) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "kitchen")), "Кухня");
-  }
-  if (groups.includes("Зал")) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "hall")), "Зал");
-  }
-  if (groups.includes("Доставка")) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "delivery")), "Доставка");
-  }
-  if (groups.includes("Бар")) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "bar")), "Бар");
+  XLSX.writeFile(wb, `итог_персонал_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+async function sendToGoogleSheets() {
+  if (!lastResultRows.length) {
+    gsStatusEl.textContent = "Сначала выполните расчет.";
+    return;
   }
 
-  const dateLabel = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `итог_персонал_${dateLabel}.xlsx`);
+  const webhookUrl = gsWebhookUrlInput.value.trim();
+  const spreadsheetId = gsSpreadsheetIdInput.value.trim();
+  const sheetName = gsSheetNameInput.value.trim();
+
+  if (!webhookUrl || !spreadsheetId) {
+    gsStatusEl.textContent = "Заполните Webhook URL и Spreadsheet ID.";
+    return;
+  }
+
+  const payload = {
+    spreadsheetId,
+    sheetName,
+    generatedAt: new Date().toISOString(),
+    groups: getCheckedGroups(),
+    rows: lastResultRows,
+    matrix: {
+      total: buildMatrix(lastResultRows, "total"),
+      kitchen: buildMatrix(lastResultRows, "kitchen"),
+      hall: buildMatrix(lastResultRows, "hall"),
+      delivery: buildMatrix(lastResultRows, "delivery"),
+      bar: buildMatrix(lastResultRows, "bar")
+    }
+  };
+
+  gsSendBtn.disabled = true;
+  gsStatusEl.textContent = "Отправка данных в Google Sheets...";
+
+  try {
+    const resp = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error(`${resp.status}: ${txt.slice(0, 200)}`);
+    }
+
+    gsStatusEl.textContent = "Данные успешно отправлены в Google Sheets.";
+  } catch (err) {
+    gsStatusEl.textContent = `Ошибка отправки: ${err.message}`;
+  } finally {
+    gsSendBtn.disabled = false;
+  }
 }
 
 function refreshStatus() {
@@ -553,48 +604,21 @@ function refreshStatus() {
 attendanceInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
-
   try {
-    const buf = await file.arrayBuffer();
-    baseRecords = parseAttendanceWorkbook(buf);
-    rebuildMappedRecords();
-
-    lastResultRows = [];
-    tableBody.innerHTML = "";
-    summaryEl.textContent = "Выберите фильтры и нажмите «Рассчитать».";
-    csvBtn.disabled = true;
-    xlsxBtn.disabled = true;
-
-    refreshStatus();
+    const rows = readWorkbookRows(await file.arrayBuffer());
+    applyAttendanceData(parseAttendanceRows(rows));
   } catch (err) {
     statusEl.textContent = `Ошибка файла проходной: ${err.message}`;
-    baseRecords = [];
-    mappedRecords = [];
-    lastResultRows = [];
-    tableBody.innerHTML = "";
-    summaryEl.textContent = "Нет данных для отображения.";
-    csvBtn.disabled = true;
-    xlsxBtn.disabled = true;
   }
 });
 
 staffInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
-
   try {
-    const buf = await file.arrayBuffer();
-    const staff = parseStaffWorkbook(buf);
-    staffRestaurantMap = staff.map;
-    staffConflicts = staff.conflicts;
-    staffConflictKeys = staff.conflictKeys;
-
-    if (baseRecords.length) {
-      rebuildMappedRecords();
-      summaryEl.textContent = "Список сотрудников загружен. Пересчитайте данные.";
-    }
-
-    refreshStatus();
+    const rows = readWorkbookRows(await file.arrayBuffer());
+    applyStaffData(parseStaffRows(rows));
+    if (baseRecords.length) summaryEl.textContent = "Список сотрудников загружен. Пересчитайте данные.";
   } catch (err) {
     statusEl.textContent = `Ошибка файла сотрудников: ${err.message}`;
     staffRestaurantMap = new Map();
@@ -607,28 +631,43 @@ staffInput.addEventListener("change", async (e) => {
   }
 });
 
+universalInput.addEventListener("change", async (e) => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+
+  const results = [];
+  for (const file of files) {
+    try {
+      const res = await processWorkbookFile(file);
+      results.push(`${res.file}: ${res.type}`);
+    } catch (err) {
+      results.push(`${file.name}: ошибка (${err.message})`);
+    }
+  }
+
+  summaryEl.textContent = `Общая загрузка: ${results.join("; ")}`;
+});
+
 calcBtn.addEventListener("click", () => {
   if (!mappedRecords.length) {
     summaryEl.textContent = "Сначала загрузите файл проходной.";
     return;
   }
-
   const checkedGroups = getCheckedGroups();
   if (!checkedGroups.length) {
     summaryEl.textContent = "Выберите хотя бы одну группу должностей.";
     tableBody.innerHTML = "";
     csvBtn.disabled = true;
     xlsxBtn.disabled = true;
+    gsSendBtn.disabled = true;
     return;
   }
-
   lastResultRows = calculate(mappedRecords);
   renderTable(lastResultRows);
 });
 
 csvBtn.addEventListener("click", () => {
   if (!lastResultRows.length) return;
-
   const csv = toCSV(lastResultRows);
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -645,3 +684,5 @@ xlsxBtn.addEventListener("click", () => {
   if (!lastResultRows.length) return;
   exportExcelPivot(lastResultRows);
 });
+
+gsSendBtn.addEventListener("click", sendToGoogleSheets);
