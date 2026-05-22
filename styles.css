@@ -227,6 +227,16 @@ th {
   margin-bottom: 7px;
 }
 
+.manualList a {
+  color: #0a6356;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.manualList a:hover {
+  color: #084a40;
+}
+
 @media (max-width: 900px) {
   .uploadGrid,
   .filters,

@@ -1,4 +1,4 @@
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.7.1";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");

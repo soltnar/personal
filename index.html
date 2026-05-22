@@ -33,6 +33,16 @@
     </section>
 
     <section class="panel">
+      <h3 class="panelTitle">Где взять файлы в Saby</h3>
+      <ol class="manualList">
+        <li>Файл проходной: <a href="https://online.saby.ru/page/work-schedule" target="_blank" rel="noopener noreferrer">открыть Графики работ</a> → <code>Пришел/ушел</code>, выбрать период и фильтр <code>Проходная</code>, нажать <code>Выгрузить</code>.</li>
+        <li>Список сотрудников: <a href="https://online.saby.ru/page/staff-list" target="_blank" rel="noopener noreferrer">открыть Сотрудники</a>, в фильтре выбрать <code>Работающие за нужный месяц</code>.</li>
+        <li>Перед выгрузкой списка убрать подразделения, которые дают дубли (<code>Сдача отчетности</code> и сторонние организации).</li>
+        <li>Далее <code>Меню → Выгрузить → Список сотрудников в Excel</code> (набор данных <code>Основная информация</code>).</li>
+      </ol>
+    </section>
+
+    <section class="panel">
       <h3 class="panelTitle">Синхронизация с Google Sheets</h3>
       <div class="gsGrid">
         <label class="fieldLabel">Webhook URL (Google Apps Script)
@@ -52,12 +62,10 @@
     </section>
 
     <section class="panel">
-      <h3 class="panelTitle">Где взять файлы в Saby</h3>
+      <h3 class="panelTitle">Следующий шаг для вас</h3>
       <ol class="manualList">
-        <li>Файл проходной: <code>Графики работ → Пришел/ушел</code>, выбрать период и фильтр <code>Проходная</code>, нажать <code>Выгрузить</code>.</li>
-        <li>Список сотрудников: <code>Сотрудники</code>, в фильтре выбрать <code>Работающие за нужный месяц</code>.</li>
-        <li>Перед выгрузкой списка убрать подразделения, которые дают дубли (<code>Сдача отчетности</code> и сторонние организации).</li>
-        <li>Далее <code>Меню → Выгрузить → Список сотрудников в Excel</code> (набор данных <code>Основная информация</code>).</li>
+        <li>Создать Apps Script по инструкции из <a href="google-apps-script.md" target="_blank" rel="noopener noreferrer">google-apps-script.md</a> и получить <code>Web app URL</code>.</li>
+        <li>Вставить <code>Web app URL</code> и <code>Spreadsheet ID</code> в блоке выше, затем нажать <code>Отправить в Google Sheets</code>.</li>
       </ol>
     </section>
 
@@ -111,6 +119,6 @@
     <footer class="footer">История версий: файл `versions.md`</footer>
   </main>
 
-  <script src="script.js?v=1.7.0"></script>
+  <script src="script.js?v=1.7.1"></script>
 </body>
 </html>
