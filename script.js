@@ -1,4 +1,4 @@
-const APP_VERSION = "1.7.1";
+const APP_VERSION = "1.7.2";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -135,7 +135,7 @@ function detectFileType(rows) {
     return "attendance";
   }
 
-  if (has("ФИО") && has("Название подразделения")) {
+  if (has("ФИО") && (has("Название подразделения") || has("Подразделение"))) {
     return "staff";
   }
 
@@ -147,10 +147,10 @@ function parseStaffRows(rows) {
 
   const header = rows[0].map((h) => String(h).trim());
   const fioIdx = header.indexOf("ФИО");
-  const restaurantIdx = header.indexOf("Название подразделения");
+  const restaurantIdx = findHeaderIndex(header, ["Название подразделения", "Подразделение"]);
 
   if (fioIdx === -1 || restaurantIdx === -1) {
-    throw new Error("В файле сотрудников нужны колонки: ФИО и Название подразделения.");
+    throw new Error("В файле сотрудников нужны колонки: ФИО и Название подразделения/Подразделение.");
   }
 
   const map = new Map();
