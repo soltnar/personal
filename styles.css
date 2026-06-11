@@ -198,25 +198,6 @@ th {
   color: var(--muted);
 }
 
-.gsGrid {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(3, minmax(220px, 1fr));
-}
-
-.fieldLabel {
-  font-weight: 600;
-  display: block;
-}
-
-.fieldLabel input {
-  margin-top: 6px;
-  width: 100%;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  padding: 9px 10px;
-}
-
 .manualList {
   margin: 0;
   padding-left: 18px;
@@ -239,8 +220,7 @@ th {
 
 @media (max-width: 900px) {
   .uploadGrid,
-  .filters,
-  .gsGrid {
+  .filters {
     grid-template-columns: 1fr;
   }
 

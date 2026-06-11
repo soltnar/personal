@@ -42,33 +42,6 @@
       </ol>
     </section>
 
-    <section class="panel">
-      <h3 class="panelTitle">Синхронизация с Google Sheets</h3>
-      <div class="gsGrid">
-        <label class="fieldLabel">Webhook URL (Google Apps Script)
-          <input id="gsWebhookUrl" type="text" placeholder="https://script.google.com/macros/s/.../exec" />
-        </label>
-        <label class="fieldLabel">Spreadsheet ID
-          <input id="gsSpreadsheetId" type="text" placeholder="1iVCsFI2-YS-RldmXSltHy9M4GO_VqLwfNGDnMhmUxLg" />
-        </label>
-        <label class="fieldLabel">Лист (опционально)
-          <input id="gsSheetName" type="text" placeholder="Май26" />
-        </label>
-      </div>
-      <div class="actions">
-        <button id="gsSendBtn" disabled>Отправить в Google Sheets</button>
-      </div>
-      <p id="gsStatus" class="hint">Нужен опубликованный Apps Script webhook с правом записи в таблицу.</p>
-    </section>
-
-    <section class="panel">
-      <h3 class="panelTitle">Следующий шаг для вас</h3>
-      <ol class="manualList">
-        <li>Создать Apps Script по инструкции из <a href="google-apps-script.md" target="_blank" rel="noopener noreferrer">google-apps-script.md</a> и получить <code>Web app URL</code>.</li>
-        <li>Вставить <code>Web app URL</code> и <code>Spreadsheet ID</code> в блоке выше, затем нажать <code>Отправить в Google Sheets</code>.</li>
-      </ol>
-    </section>
-
     <section class="panel filters">
       <div>
         <label class="label" for="dateSelect">Даты (мультивыбор)</label>
@@ -119,6 +92,6 @@
     <footer class="footer">История версий: файл `versions.md`</footer>
   </main>
 
-  <script src="script.js?v=1.7.2"></script>
+  <script src="script.js?v=1.7.3"></script>
 </body>
 </html>

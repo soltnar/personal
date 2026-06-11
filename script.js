@@ -1,4 +1,4 @@
-const APP_VERSION = "1.7.2";
+const APP_VERSION = "1.7.3";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -10,11 +10,6 @@ const restaurantSelect = document.getElementById("restaurantSelect");
 const calcBtn = document.getElementById("calcBtn");
 const csvBtn = document.getElementById("csvBtn");
 const xlsxBtn = document.getElementById("xlsxBtn");
-const gsSendBtn = document.getElementById("gsSendBtn");
-const gsWebhookUrlInput = document.getElementById("gsWebhookUrl");
-const gsSpreadsheetIdInput = document.getElementById("gsSpreadsheetId");
-const gsSheetNameInput = document.getElementById("gsSheetName");
-const gsStatusEl = document.getElementById("gsStatus");
 const summaryEl = document.getElementById("summary");
 const tableBody = document.querySelector("#resultTable tbody");
 const appVersionEl = document.getElementById("appVersion");
@@ -263,7 +258,6 @@ function applyAttendanceData(records) {
   summaryEl.textContent = "Выберите фильтры и нажмите «Рассчитать».";
   csvBtn.disabled = true;
   xlsxBtn.disabled = true;
-  gsSendBtn.disabled = true;
   refreshStatus();
 }
 
@@ -436,7 +430,6 @@ function renderTable(rows) {
     summaryEl.textContent = "По выбранным фильтрам данных нет.";
     csvBtn.disabled = true;
     xlsxBtn.disabled = true;
-    gsSendBtn.disabled = true;
     return;
   }
 
@@ -486,7 +479,6 @@ function renderTable(rows) {
   summaryEl.textContent = `Строк: ${rows.length}. Кухня: ${formatShift(totalKitchen)}, Зал: ${formatShift(totalHall)}, Доставка: ${formatShift(totalDelivery)}, Бар: ${formatShift(totalBar)}, Всего смен: ${formatShift(totalKitchen + totalHall + totalDelivery + totalBar)}.`;
   csvBtn.disabled = false;
   xlsxBtn.disabled = false;
-  gsSendBtn.disabled = false;
 }
 
 function toCSV(rows) {
@@ -532,59 +524,6 @@ function exportExcelPivot(rows) {
   if (groups.includes("Бар")) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(buildMatrix(rows, "bar")), "Бар");
 
   XLSX.writeFile(wb, `итог_персонал_${new Date().toISOString().slice(0, 10)}.xlsx`);
-}
-
-async function sendToGoogleSheets() {
-  if (!lastResultRows.length) {
-    gsStatusEl.textContent = "Сначала выполните расчет.";
-    return;
-  }
-
-  const webhookUrl = gsWebhookUrlInput.value.trim();
-  const spreadsheetId = gsSpreadsheetIdInput.value.trim();
-  const sheetName = gsSheetNameInput.value.trim();
-
-  if (!webhookUrl || !spreadsheetId) {
-    gsStatusEl.textContent = "Заполните Webhook URL и Spreadsheet ID.";
-    return;
-  }
-
-  const payload = {
-    spreadsheetId,
-    sheetName,
-    generatedAt: new Date().toISOString(),
-    groups: getCheckedGroups(),
-    rows: lastResultRows,
-    matrix: {
-      total: buildMatrix(lastResultRows, "total"),
-      kitchen: buildMatrix(lastResultRows, "kitchen"),
-      hall: buildMatrix(lastResultRows, "hall"),
-      delivery: buildMatrix(lastResultRows, "delivery"),
-      bar: buildMatrix(lastResultRows, "bar")
-    }
-  };
-
-  gsSendBtn.disabled = true;
-  gsStatusEl.textContent = "Отправка данных в Google Sheets...";
-
-  try {
-    const resp = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    if (!resp.ok) {
-      const txt = await resp.text();
-      throw new Error(`${resp.status}: ${txt.slice(0, 200)}`);
-    }
-
-    gsStatusEl.textContent = "Данные успешно отправлены в Google Sheets.";
-  } catch (err) {
-    gsStatusEl.textContent = `Ошибка отправки: ${err.message}`;
-  } finally {
-    gsSendBtn.disabled = false;
-  }
 }
 
 function refreshStatus() {
@@ -659,7 +598,6 @@ calcBtn.addEventListener("click", () => {
     tableBody.innerHTML = "";
     csvBtn.disabled = true;
     xlsxBtn.disabled = true;
-    gsSendBtn.disabled = true;
     return;
   }
   lastResultRows = calculate(mappedRecords);
@@ -684,5 +622,3 @@ xlsxBtn.addEventListener("click", () => {
   if (!lastResultRows.length) return;
   exportExcelPivot(lastResultRows);
 });
-
-gsSendBtn.addEventListener("click", sendToGoogleSheets);
