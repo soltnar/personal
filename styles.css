@@ -71,7 +71,7 @@ h1 {
 
 .filters {
   display: grid;
-  grid-template-columns: 1fr 2fr 2fr;
+  grid-template-columns: 1fr 2fr 1.4fr 2fr;
   gap: 16px;
 }
 

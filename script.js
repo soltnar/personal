@@ -1,12 +1,14 @@
-const APP_VERSION = "1.7.4";
+const APP_VERSION = "1.8.0";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
 const attendanceInput = document.getElementById("attendanceInput");
 const staffInput = document.getElementById("staffInput");
+const revenueInput = document.getElementById("revenueInput");
 const statusEl = document.getElementById("status");
 const dateSelect = document.getElementById("dateSelect");
 const restaurantSelect = document.getElementById("restaurantSelect");
+const warehouseTypeSelect = document.getElementById("warehouseTypeSelect");
 const calcBtn = document.getElementById("calcBtn");
 const csvBtn = document.getElementById("csvBtn");
 const xlsxBtn = document.getElementById("xlsxBtn");
@@ -21,6 +23,8 @@ let staffConflicts = 0;
 let staffConflictKeys = new Set();
 let mappingStats = { matched: 0, total: 0 };
 let lastResultRows = [];
+let revenueRows = [];
+let revenueStats = { rows: 0, matched: 0 };
 
 appVersionEl.textContent = APP_VERSION;
 
@@ -121,6 +125,282 @@ function readWorkbookRows(arrayBuffer) {
   return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
 }
 
+
+const DEFAULT_REVENUE_EXCLUSIONS = [
+  "Онлайн оплата, СБП",
+  "Основной склад",
+  "БУРГЕР БИК ООО Чайка",
+  "Бургер Бик",
+  "Фабрика разделка",
+  "Шале №15",
+  "Совнаркомовская 13",
+  "НТО ООО Приспех пр-кт Гагарина, д. 35",
+  "Юность ул. Зеленский Съезд, д. 8/10",
+  "ИП Амельченко Евгений Андреевич",
+  "Фудтрак Амельченко пл. Маркина, д. 12А",
+  "Фабрика кондитерка",
+  "ул. Большая Покровская, д. 13",
+  "Швейцария БИК \"ПРИСПЕХ\"",
+  "Фабрика пекарня"
+].map(revenueNameKey);
+
+function readWorkbook(arrayBuffer) {
+  return XLSX.read(arrayBuffer, { type: "array" });
+}
+
+function cellToText(cell) {
+  if (!cell) return "";
+  if (cell.w != null) return String(cell.w).trim();
+  if (cell.v != null) return String(cell.v).trim();
+  return "";
+}
+
+function repairWorksheetRef(ws) {
+  if (!ws) return;
+  const cells = Object.keys(ws).filter((k) => !k.startsWith("!"));
+  if (!cells.length) return;
+  let minR = Infinity;
+  let minC = Infinity;
+  let maxR = -1;
+  let maxC = -1;
+  cells.forEach((addr) => {
+    const decoded = XLSX.utils.decode_cell(addr);
+    minR = Math.min(minR, decoded.r);
+    minC = Math.min(minC, decoded.c);
+    maxR = Math.max(maxR, decoded.r);
+    maxC = Math.max(maxC, decoded.c);
+  });
+  ws["!ref"] = XLSX.utils.encode_range({ s: { r: minR, c: minC }, e: { r: maxR, c: maxC } });
+}
+
+function parseRevenueWorkbook(arrayBuffer, fileName) {
+  const wb = readWorkbook(arrayBuffer);
+  const parsed = [];
+  wb.SheetNames.forEach((sheetName) => {
+    const ws = wb.Sheets[sheetName];
+    repairWorksheetRef(ws);
+    parsed.push(...parseRevenuePeriodicByDays(ws, fileName, sheetName));
+  });
+  return aggregateRevenueRows(parsed);
+}
+
+function parseRevenuePeriodicByDays(ws, fileName, sheetName) {
+  if (!ws) return [];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: "A", raw: false, defval: "", blankrows: false });
+  const result = [];
+  let currentWarehouse = null;
+
+  rows.forEach((row) => {
+    const a = String(row.A || "").trim();
+    const dateIso = normalizeRevenueDate(a);
+    const revenue = revenueToNumber(row.E);
+
+    if (dateIso) {
+      if (currentWarehouse && revenue != null && revenue > 0) {
+        result.push({ dateIso, warehouse: currentWarehouse, revenue, source: `${fileName} / ${sheetName}` });
+      }
+      return;
+    }
+
+    if (a && isBlockedRevenueName(a)) {
+      currentWarehouse = null;
+      return;
+    }
+
+    const warehouse = cleanRevenueWarehouseName(a);
+    if (warehouse) currentWarehouse = warehouse;
+  });
+
+  return result;
+}
+
+function aggregateRevenueRows(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const parts = splitRevenueWarehouseName(row.warehouse);
+    const key = `${row.dateIso}||${parts.restaurant}||${parts.warehouse}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.revenue += row.revenue;
+    } else {
+      map.set(key, {
+        dateIso: row.dateIso,
+        restaurant: parts.restaurant,
+        restaurantKey: restaurantMatchKey(parts.restaurant),
+        warehouse: parts.warehouse,
+        warehouseKind: getRevenueWarehouseKind(parts.warehouse),
+        revenue: row.revenue,
+        source: row.source
+      });
+    }
+  });
+  return Array.from(map.values());
+}
+
+function normalizeRevenueDate(value) {
+  const text = String(value || "").trim();
+  const shortMatch = text.match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+  if (shortMatch) {
+    const yy = Number(shortMatch[3]);
+    const year = yy >= 70 ? 1900 + yy : 2000 + yy;
+    return `${year}-${shortMatch[2]}-${shortMatch[1]}`;
+  }
+  const fullMatch = text.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (fullMatch) return `${fullMatch[3]}-${fullMatch[2]}-${fullMatch[1]}`;
+  return null;
+}
+
+function cleanRevenueWarehouseName(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  if (/^\d+[.,]?\d*$/.test(text)) return null;
+  if (/^отчет по продажам$/i.test(text)) return null;
+  if (/^построен:/i.test(text)) return null;
+  if (/^детализация:/i.test(text)) return null;
+  if (/^наша компания:/i.test(text)) return null;
+  if (/^выручки?$/i.test(text)) return null;
+  if (/^сумма$/i.test(text)) return null;
+  if (/^кол-во$/i.test(text)) return null;
+  if (/^ед\.\s*изм\.?$/i.test(text)) return null;
+  if (/^продажа$/i.test(text)) return null;
+  if (/^лист\d*$/i.test(text)) return null;
+  if (/^\d{2}\.\d{2}\.\d{4}\s*-\s*\d{2}\.\d{2}\.\d{4}$/.test(text)) return null;
+  if (isBlockedRevenueName(text)) return null;
+  return text;
+}
+
+function revenueToNumber(value) {
+  if (value == null || value === "") return null;
+  let s = String(value).trim();
+  if (!s) return null;
+  s = s.replace(/\u00a0/g, " ").replace(/\s/g, "");
+  s = s.replace(/[^\d,.\-]/g, "");
+  if (!s || s === "-" || s === "," || s === ".") return null;
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  if (lastComma >= 0 && lastDot >= 0) {
+    if (lastComma > lastDot) {
+      s = s.replace(/\./g, "").replace(",", ".");
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (lastComma >= 0) {
+    s = s.replace(",", ".");
+  }
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function splitRevenueWarehouseName(name) {
+  const original = String(name || "").trim();
+  const key = revenueNameKey(original);
+  let restaurant = original;
+
+  if (/^БП\s*59/i.test(original)) {
+    restaurant = "Б. Покровская, 59 Самурай";
+  } else if (/^БП\s*63/i.test(original)) {
+    restaurant = "Б. Покровская, 63 Самурай";
+  } else if (/^ВП\s*14/i.test(original)) {
+    restaurant = "Верхне-Печерская, 14Б Самурай";
+  } else if (/белинского/i.test(original) && /61/.test(original) && /достав/i.test(original)) {
+    restaurant = "Белинского, 61 доставка Самурай";
+  } else if (/белинского/i.test(original) && /61/.test(original) && /ribs/i.test(original)) {
+    restaurant = "Белинского, 61 Ribs";
+  } else if (/белинского/i.test(original) && /61/.test(original)) {
+    restaurant = "Белинского, 61 Самурай";
+  } else if (/гагарина/i.test(original) && /35/.test(original)) {
+    restaurant = "Парк Швейцария Самурай";
+  } else if (/моторн/i.test(original) && /(пер|2к1|2\/1)/i.test(original)) {
+    restaurant = "Моторный, 2/1 доставка Самурай";
+  } else if (/коминтерн/i.test(original) && /166/.test(original)) {
+    restaurant = "Коминтерна 166 CALL CENTRE";
+  } else if (/^RIBS\b/i.test(original)) {
+    restaurant = "RIBS";
+  } else if (/^Ресторан XIX\b/i.test(original)) {
+    restaurant = "Ресторан XIX";
+  } else if (key.includes("винедо") || key.includes("vinedo")) {
+    restaurant = "ВИНЕДО";
+  } else if (/^Самурай,\s*/i.test(original)) {
+    restaurant = original.replace(/\s*\([^)]*\)\s*$/g, "").replace(/^Самурай,\s*/i, "").trim();
+    restaurant = `${restaurant} Самурай`;
+    if (/^Октября,/i.test(restaurant) && /(^|[^\d])2([^\d]|$)/.test(restaurant)) restaurant = "Октября, 2 Самурай";
+    if (/^Веденяпина/i.test(restaurant) && /1А/i.test(restaurant)) restaurant = "Веденяпина, 1А Самурай";
+    if (/^(Гагарина,\s*35|Парк Швейцария)/i.test(restaurant)) restaurant = "Парк Швейцария Самурай";
+  } else if (/^Детский центр Жюль Верн\b/i.test(original)) {
+    restaurant = "Детский центр Жюль Верн";
+  } else {
+    restaurant = original.replace(/\s*\([^)]*\)\s*$/g, "").trim();
+  }
+
+  return { restaurant: restaurant || original, warehouse: original };
+}
+
+function revenueNameKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replaceAll("ё", "е")
+    .replace(/\u00a0/g, " ")
+    .replace(/[.,;:()\-_/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function restaurantMatchKey(value) {
+  let key = revenueNameKey(value);
+  key = key
+    .replace(/\bсамурай\b/g, "")
+    .replace(/\bcall\b|\bcentre\b|\bcenter\b/g, "")
+    .replace(/\bд\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (key.includes("коминтерна") && key.includes("166")) key = key.replace(/\bдоставка\b/g, "").trim();
+  return key;
+}
+
+function isBlockedRevenueName(value) {
+  const key = revenueNameKey(value);
+  return DEFAULT_REVENUE_EXCLUSIONS.some((rule) => rule && key.includes(rule));
+}
+
+function getRevenueWarehouseKind(name) {
+  const key = revenueNameKey(name);
+  if (key.includes("кухня")) return "kitchen";
+  if (key.includes("бар")) return "bar";
+  return "single";
+}
+
+function getSelectedWarehouseTypes() {
+  return getSelectedValues(warehouseTypeSelect);
+}
+
+function revenueMatchesWarehouseType(row) {
+  const selectedTypes = getSelectedWarehouseTypes();
+  if (!selectedTypes.length || selectedTypes.includes("all")) return true;
+  return selectedTypes.includes(row.warehouseKind);
+}
+
+function getRevenueFor(restaurant, dateIso) {
+  if (!revenueRows.length) return 0;
+  const key = restaurantMatchKey(restaurant);
+  return revenueRows
+    .filter((row) => row.dateIso === dateIso && revenueMatchesWarehouseType(row) && revenueRestaurantMatches(row.restaurantKey, key))
+    .reduce((sum, row) => sum + row.revenue, 0);
+}
+
+function revenueRestaurantMatches(revenueKey, staffKey) {
+  if (!revenueKey || !staffKey) return false;
+  return revenueKey === staffKey || revenueKey.includes(staffKey) || staffKey.includes(revenueKey);
+}
+
+function formatMoney(value) {
+  return Math.round(value || 0).toLocaleString("ru-RU");
+}
+
+function round2(n) {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
 function detectFileType(rows) {
   if (!rows.length) return "unknown";
   const header = rows[0].map((h) => String(h).trim());
@@ -132,6 +412,11 @@ function detectFileType(rows) {
 
   if (has("ФИО") && (has("Название подразделения") || has("Подразделение"))) {
     return "staff";
+  }
+
+  const joined = rows.slice(0, 20).flat().map((v) => String(v || "")).join(" ");
+  if (/Отчет по продажам|Детализация:\s*Склад|Продажа|Сумма/i.test(joined)) {
+    return "revenue";
   }
 
   return "unknown";
@@ -261,6 +546,16 @@ function applyAttendanceData(records) {
   refreshStatus();
 }
 
+function applyRevenueData(rows) {
+  revenueRows = rows;
+  revenueStats = { rows: rows.length, matched: 0 };
+  if (lastResultRows.length) {
+    lastResultRows = calculate(mappedRecords);
+    renderTable(lastResultRows);
+  }
+  refreshStatus();
+}
+
 async function processWorkbookFile(file) {
   const buf = await file.arrayBuffer();
   const rows = readWorkbookRows(buf);
@@ -274,6 +569,12 @@ async function processWorkbookFile(file) {
   if (type === "staff") {
     applyStaffData(parseStaffRows(rows));
     return { file: file.name, type: "сотрудники" };
+  }
+
+  if (type === "revenue") {
+    const parsedRevenueRows = parseRevenueWorkbook(buf, file.name);
+    applyRevenueData(parsedRevenueRows);
+    return { file: file.name, type: `выручки (${parsedRevenueRows.length})` };
   }
 
   return { file: file.name, type: "не распознан" };
@@ -377,6 +678,7 @@ function calculate(records) {
         delivery: 0,
         bar: 0,
         total: 0,
+        revenue: 0,
         hasConflict: false,
         details: { kitchen: [], hall: [], delivery: [], bar: [] }
       });
@@ -402,6 +704,7 @@ function calculate(records) {
       row.details.hall.sort((a, b) => a.person.localeCompare(b.person, "ru"));
       row.details.delivery.sort((a, b) => a.person.localeCompare(b.person, "ru"));
       row.details.bar.sort((a, b) => a.person.localeCompare(b.person, "ru"));
+      row.revenue = getRevenueFor(row.restaurant, row.dateIso);
       return row;
     })
     .sort((a, b) => (a.dateIso !== b.dateIso ? a.dateIso.localeCompare(b.dateIso) : a.restaurant.localeCompare(b.restaurant, "ru")));
@@ -437,12 +740,14 @@ function renderTable(rows) {
   let totalHall = 0;
   let totalDelivery = 0;
   let totalBar = 0;
+  let totalRevenue = 0;
 
   rows.forEach((r) => {
     totalKitchen += r.kitchen;
     totalHall += r.hall;
     totalDelivery += r.delivery;
     totalBar += r.bar;
+    totalRevenue += r.revenue || 0;
 
     const tr = document.createElement("tr");
     const detailsTr = document.createElement("tr");
@@ -450,7 +755,7 @@ function renderTable(rows) {
     detailsTr.style.display = "none";
 
     const detailsCell = document.createElement("td");
-    detailsCell.colSpan = 8;
+    detailsCell.colSpan = 9;
     detailsCell.innerHTML = buildDetailsHtml(r);
     detailsTr.appendChild(detailsCell);
 
@@ -463,6 +768,7 @@ function renderTable(rows) {
       <td>${formatShift(r.hall)}</td>
       <td>${formatShift(r.delivery)}</td>
       <td>${formatShift(r.bar)}</td>
+      <td>${formatMoney(r.revenue)}</td>
       <td>${formatShift(r.total)}</td>
     `;
 
@@ -476,13 +782,13 @@ function renderTable(rows) {
     });
   });
 
-  summaryEl.textContent = `Строк: ${rows.length}. Кухня: ${formatShift(totalKitchen)}, Зал: ${formatShift(totalHall)}, Доставка: ${formatShift(totalDelivery)}, Бар: ${formatShift(totalBar)}, Всего смен: ${formatShift(totalKitchen + totalHall + totalDelivery + totalBar)}.`;
+  summaryEl.textContent = `Строк: ${rows.length}. Кухня: ${formatShift(totalKitchen)}, Зал: ${formatShift(totalHall)}, Доставка: ${formatShift(totalDelivery)}, Бар: ${formatShift(totalBar)}, Выручка: ${formatMoney(totalRevenue)}, Всего смен: ${formatShift(totalKitchen + totalHall + totalDelivery + totalBar)}.`;
   csvBtn.disabled = false;
   xlsxBtn.disabled = false;
 }
 
 function toCSV(rows) {
-  const head = ["Дата", "Ресторан", "Кухня", "Зал", "Доставка", "Бар", "Итого"];
+  const head = ["Дата", "Ресторан", "Кухня", "Зал", "Доставка", "Бар", "Выручка", "Итого"];
   const lines = [head.join(";")];
   rows.forEach((r) => {
     lines.push([
@@ -492,6 +798,7 @@ function toCSV(rows) {
       formatShift(r.hall),
       formatShift(r.delivery),
       formatShift(r.bar),
+      r.revenue || 0,
       formatShift(r.total)
     ].join(";"));
   });
@@ -501,13 +808,18 @@ function toCSV(rows) {
 function buildMatrix(rows, fieldName) {
   const restaurants = [...new Set(rows.map((r) => r.restaurant))].sort((a, b) => a.localeCompare(b, "ru"));
   const dates = [...new Set(rows.map((r) => r.dateIso))].sort();
-  const map = new Map(rows.map((r) => [`${r.restaurant}||${r.dateIso}`, r[fieldName]]));
+  const staffMap = new Map(rows.map((r) => [`${r.restaurant}||${r.dateIso}`, r[fieldName]]));
+  const revenueMap = new Map(rows.map((r) => [`${r.restaurant}||${r.dateIso}`, r.revenue || 0]));
 
-  const aoa = [["Ресторан", ...dates.map(prettyDate)]];
+  const aoa = [["Ресторан", "Показатель", ...dates.map(prettyDate)]];
   restaurants.forEach((restaurant) => {
-    const line = [restaurant];
-    dates.forEach((dateIso) => line.push(map.get(`${restaurant}||${dateIso}`) || 0));
-    aoa.push(line);
+    const revenueLine = [restaurant, "Выручка"];
+    const staffLine = ["", "Кол-во персонала"];
+    dates.forEach((dateIso) => {
+      revenueLine.push(round2(revenueMap.get(`${restaurant}||${dateIso}`) || 0));
+      staffLine.push(staffMap.get(`${restaurant}||${dateIso}`) || 0);
+    });
+    aoa.push(revenueLine, staffLine);
   });
 
   return aoa;
@@ -536,8 +848,9 @@ function refreshStatus() {
   const staffPart = staffLoaded
     ? ` Список сотрудников: сопоставлено ${mappingStats.matched} из ${mappingStats.total} записей.${staffConflicts ? ` Конфликтов ФИО: ${staffConflicts}.` : ""}`
     : " Список сотрудников не загружен, рестораны не будут определены.";
+  const revenuePart = revenueRows.length ? ` Выручек: ${revenueRows.length} строк.` : " Файл выручек не загружен.";
 
-  statusEl.textContent = `Записей проходной: ${baseRecords.length}.${staffPart}`;
+  statusEl.textContent = `Записей проходной: ${baseRecords.length}.${staffPart}${revenuePart}`;
 }
 
 attendanceInput.addEventListener("change", async (e) => {
@@ -568,6 +881,25 @@ staffInput.addEventListener("change", async (e) => {
       refreshStatus();
     }
   }
+});
+
+revenueInput.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    const rows = parseRevenueWorkbook(await file.arrayBuffer(), file.name);
+    applyRevenueData(rows);
+    summaryEl.textContent = `Файл выручек загружен: ${rows.length} строк. Пересчитайте данные.`;
+  } catch (err) {
+    statusEl.textContent = `Ошибка файла выручек: ${err.message}`;
+    revenueRows = [];
+    refreshStatus();
+  }
+});
+
+warehouseTypeSelect.addEventListener("change", () => {
+  if (!mappedRecords.length) return;
+  summaryEl.textContent = "Тип склада выручки изменен. Нажмите «Рассчитать».";
 });
 
 universalInput.addEventListener("change", async (e) => {
