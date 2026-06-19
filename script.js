@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.8.1";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -141,7 +141,8 @@ const DEFAULT_REVENUE_EXCLUSIONS = [
   "Фабрика кондитерка",
   "ул. Большая Покровская, д. 13",
   "Швейцария БИК \"ПРИСПЕХ\"",
-  "Фабрика пекарня"
+  "Фабрика пекарня",
+  "Рождественская"
 ].map(revenueNameKey);
 
 function readWorkbook(arrayBuffer) {
@@ -297,38 +298,49 @@ function splitRevenueWarehouseName(name) {
   const key = revenueNameKey(original);
   let restaurant = original;
 
-  if (/^БП\s*59/i.test(original)) {
+  if (key.includes("бп 59")) {
     restaurant = "Б. Покровская, 59 Самурай";
-  } else if (/^БП\s*63/i.test(original)) {
+  } else if (key.includes("бп 63")) {
     restaurant = "Б. Покровская, 63 Самурай";
-  } else if (/^ВП\s*14/i.test(original)) {
+  } else if (key.includes("вп 14")) {
     restaurant = "Верхне-Печерская, 14Б Самурай";
-  } else if (/белинского/i.test(original) && /61/.test(original) && /достав/i.test(original)) {
-    restaurant = "Белинского, 61 доставка Самурай";
-  } else if (/белинского/i.test(original) && /61/.test(original) && /ribs/i.test(original)) {
-    restaurant = "Белинского, 61 Ribs";
-  } else if (/белинского/i.test(original) && /61/.test(original)) {
-    restaurant = "Белинского, 61 Самурай";
-  } else if (/гагарина/i.test(original) && /35/.test(original)) {
-    restaurant = "Парк Швейцария Самурай";
-  } else if (/моторн/i.test(original) && /(пер|2к1|2\/1)/i.test(original)) {
-    restaurant = "Моторный, 2/1 доставка Самурай";
-  } else if (/коминтерн/i.test(original) && /166/.test(original)) {
-    restaurant = "Коминтерна 166 CALL CENTRE";
-  } else if (/^RIBS\b/i.test(original)) {
-    restaurant = "RIBS";
-  } else if (/^Ресторан XIX\b/i.test(original)) {
-    restaurant = "Ресторан XIX";
+  } else if (key.includes("каспарус") || (key.includes("циолковского") && key.includes("19"))) {
+    restaurant = "Циолковского, 19А Самурай";
+  } else if (key.includes("геологов")) {
+    restaurant = "Геологов 7А Самурай";
+  } else if ((key.includes("ленина") && key.includes("64")) || key.includes("ударник")) {
+    restaurant = "Ленина, 64 Ударник";
+  } else if (key.includes("ошар") || key.includes("ресторан xix")) {
+    restaurant = "Ошарская, 8А 19";
   } else if (key.includes("винедо") || key.includes("vinedo")) {
-    restaurant = "ВИНЕДО";
-  } else if (/^Самурай,\s*/i.test(original)) {
-    restaurant = original.replace(/\s*\([^)]*\)\s*$/g, "").replace(/^Самурай,\s*/i, "").trim();
-    restaurant = `${restaurant} Самурай`;
-    if (/^Октября,/i.test(restaurant) && /(^|[^\d])2([^\d]|$)/.test(restaurant)) restaurant = "Октября, 2 Самурай";
-    if (/^Веденяпина/i.test(restaurant) && /1А/i.test(restaurant)) restaurant = "Веденяпина, 1А Самурай";
-    if (/^(Гагарина,\s*35|Парк Швейцария)/i.test(restaurant)) restaurant = "Парк Швейцария Самурай";
+    restaurant = "Октябрьская, 1 Vinedo";
+  } else if (key.includes("белинского") && key.includes("61") && key.includes("достав")) {
+    restaurant = "Белинского, 61 доставка Самурай";
+  } else if ((key.includes("белинского") && key.includes("61") && key.includes("ribs")) || /^RIBS\b/i.test(original)) {
+    restaurant = "Белинского, 61 Ribs";
+  } else if (key.includes("белинского") && key.includes("61")) {
+    restaurant = "Белинского, 61 Самурай";
+  } else if ((key.includes("гагарина") && key.includes("35")) || key.includes("парк швейцария")) {
+    restaurant = "Парк Швейцария Самурай";
+  } else if (key.includes("моторн") && (key.includes("пер") || key.includes("2к1") || key.includes("2 1"))) {
+    restaurant = "Моторный, 2/1 доставка Самурай";
+  } else if (key.includes("коминтерн") && key.includes("166")) {
+    restaurant = "Коминтерна 166 CALL CENTRE";
+  } else if (key.includes("коминтерн") && key.includes("115")) {
+    restaurant = "Коминтерна, 115 Самурай";
+  } else if (key.includes("волжская") && key.includes("13")) {
+    restaurant = "Волжская, 13 Самурай";
+  } else if (key.includes("веденяпина") && key.includes("1а")) {
+    restaurant = "Веденяпина, 1А Самурай";
+  } else if (key.includes("октября") && key.includes("2")) {
+    restaurant = "Октября, 2 Самурай";
+  } else if (key.includes("ленина") && key.includes("36")) {
+    restaurant = "Ленина, 36 Самурай";
   } else if (/^Детский центр Жюль Верн\b/i.test(original)) {
     restaurant = "Детский центр Жюль Верн";
+  } else if (/^Самурай,\s*/i.test(original)) {
+    restaurant = original.replace(/\s*\([^)]*\)\s*$/g, "").replace(/^Самурай,\s*/i, "").trim();
+    restaurant = restaurant + " Самурай";
   } else {
     restaurant = original.replace(/\s*\([^)]*\)\s*$/g, "").trim();
   }
