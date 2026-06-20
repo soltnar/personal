@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8.2";
+const APP_VERSION = "1.8.3";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -67,6 +67,27 @@ function normalize(text) {
 
 function normalizeFio(text) {
   return normalize(text).replace(/[^a-zа-я0-9 ]/gi, "");
+}
+
+function canonicalRestaurantName(value) {
+  const original = String(value || "").trim();
+  const key = revenueNameKey(original);
+  if (key.includes("белинского") && key.includes("61") && key.includes("достав")) {
+    return "Белинского, 61 Самурай";
+  }
+  if (key.includes("детский центр жюль верн") || (key.includes("ленина") && key.includes("64") && key.includes("ударник"))) {
+    return "Ленина, 64 Ударник";
+  }
+  return original;
+}
+
+function isNonRestaurantDepartment(value) {
+  const key = revenueNameKey(value);
+  return !key
+    || key === "не определен в списке сотрудников"
+    || key === "технический персонал"
+    || key.includes("сотрудники сторонних организаций")
+    || key.includes("сдача отчетности");
 }
 
 function classifyRole(roleText) {
@@ -336,8 +357,8 @@ function splitRevenueWarehouseName(name) {
     restaurant = "Октября, 2 Самурай";
   } else if (key.includes("ленина") && key.includes("36")) {
     restaurant = "Ленина, 36 Самурай";
-  } else if (/^Детский центр Жюль Верн\b/i.test(original)) {
-    restaurant = "Детский центр Жюль Верн";
+  } else if (key.includes("детский центр жюль верн")) {
+    restaurant = "Ленина, 64 Ударник";
   } else if (/^Самурай,\s*/i.test(original)) {
     restaurant = original.replace(/\s*\([^)]*\)\s*$/g, "").replace(/^Самурай,\s*/i, "").trim();
     restaurant = restaurant + " Самурай";
@@ -452,7 +473,7 @@ function parseStaffRows(rows) {
   for (let i = 1; i < rows.length; i += 1) {
     const row = rows[i];
     const fio = String(row[fioIdx] || "").trim();
-    const restaurant = String(row[restaurantIdx] || "").trim();
+    const restaurant = canonicalRestaurantName(row[restaurantIdx]);
     if (!fio || !restaurant) continue;
 
     const key = normalizeFio(fio);
@@ -598,7 +619,7 @@ function rebuildMappedRecords(selectAllRestaurants = false) {
   mappingStats = { matched: 0, total: baseRecords.length };
 
   mappedRecords = baseRecords.map((r) => {
-    const mappedRestaurant = staffRestaurantMap.get(r.personKey);
+    const mappedRestaurant = canonicalRestaurantName(staffRestaurantMap.get(r.personKey));
     if (mappedRestaurant) mappingStats.matched += 1;
 
     return {
@@ -616,7 +637,7 @@ function rebuildMappedRecords(selectAllRestaurants = false) {
   // full restaurant list available even when a location has no gate events.
   const restaurants = [
     ...new Set([
-      ...mappedRecords.map((r) => r.restaurant),
+      ...mappedRecords.map((r) => r.restaurant).filter((name) => !isNonRestaurantDepartment(name)),
       ...revenueRows.map((r) => r.restaurant)
     ])
   ].sort((a, b) => a.localeCompare(b, "ru"));
