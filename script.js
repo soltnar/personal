@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8.1";
+const APP_VERSION = "1.8.2";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -559,8 +559,10 @@ function applyAttendanceData(records) {
 }
 
 function applyRevenueData(rows) {
+  const isFirstRevenueLoad = revenueRows.length === 0;
   revenueRows = rows;
   revenueStats = { rows: rows.length, matched: 0 };
+  if (baseRecords.length) rebuildMappedRecords(isFirstRevenueLoad);
   if (lastResultRows.length) {
     lastResultRows = calculate(mappedRecords);
     renderTable(lastResultRows);
@@ -592,7 +594,7 @@ async function processWorkbookFile(file) {
   return { file: file.name, type: "не распознан" };
 }
 
-function rebuildMappedRecords() {
+function rebuildMappedRecords(selectAllRestaurants = false) {
   mappingStats = { matched: 0, total: baseRecords.length };
 
   mappedRecords = baseRecords.map((r) => {
@@ -607,10 +609,17 @@ function rebuildMappedRecords() {
   });
 
   const prevDates = getSelectedValues(dateSelect);
-  const prevRestaurants = getSelectedValues(restaurantSelect);
+  const prevRestaurants = selectAllRestaurants ? [] : getSelectedValues(restaurantSelect);
 
   const dates = [...new Set(mappedRecords.map((r) => r.dateIso))].sort();
-  const restaurants = [...new Set(mappedRecords.map((r) => r.restaurant))].sort((a, b) => a.localeCompare(b, "ru"));
+  // Attendance can cover only part of the restaurants. Revenue rows keep the
+  // full restaurant list available even when a location has no gate events.
+  const restaurants = [
+    ...new Set([
+      ...mappedRecords.map((r) => r.restaurant),
+      ...revenueRows.map((r) => r.restaurant)
+    ])
+  ].sort((a, b) => a.localeCompare(b, "ru"));
 
   fillMultiSelect(dateSelect, dates, prevDates);
   fillMultiSelect(restaurantSelect, restaurants, prevRestaurants);
@@ -676,15 +685,11 @@ function calculate(records) {
 
   const restaurantDay = new Map();
 
-  Array.from(personDay.values()).forEach((item) => {
-    const shiftValue = workedSecondsToShift(calcWorkedSeconds(item.events));
-    if (shiftValue === 0) return;
-
-    const key = `${item.dateIso}||${item.restaurant}`;
-    if (!restaurantDay.has(key)) {
-      restaurantDay.set(key, {
-        dateIso: item.dateIso,
-        restaurant: item.restaurant,
+  selectedDates.forEach((dateIso) => {
+    selectedRestaurants.forEach((restaurant) => {
+      restaurantDay.set(`${dateIso}||${restaurant}`, {
+        dateIso,
+        restaurant,
         kitchen: 0,
         hall: 0,
         delivery: 0,
@@ -694,8 +699,14 @@ function calculate(records) {
         hasConflict: false,
         details: { kitchen: [], hall: [], delivery: [], bar: [] }
       });
-    }
+    });
+  });
 
+  Array.from(personDay.values()).forEach((item) => {
+    const shiftValue = workedSecondsToShift(calcWorkedSeconds(item.events));
+    if (shiftValue === 0) return;
+
+    const key = `${item.dateIso}||${item.restaurant}`;
     const row = restaurantDay.get(key);
     if (item.group === "Кухня") row.details.kitchen.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
     if (item.group === "Зал") row.details.hall.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
@@ -905,6 +916,7 @@ revenueInput.addEventListener("change", async (e) => {
   } catch (err) {
     statusEl.textContent = `Ошибка файла выручек: ${err.message}`;
     revenueRows = [];
+    if (baseRecords.length) rebuildMappedRecords();
     refreshStatus();
   }
 });
