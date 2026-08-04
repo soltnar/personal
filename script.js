@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8.4";
+const APP_VERSION = "1.8.5";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -69,12 +69,17 @@ function normalizeFio(text) {
   return normalize(text).replace(/[^a-zа-я0-9 ]/gi, "");
 }
 
+function hasRibsMarker(value) {
+  const text = String(value || "").toLowerCase().replace(/ё/g, "е");
+  return text.includes("ribs") || text.includes("рибс") || /[rр][iи][bб][sс]/i.test(text);
+}
+
 function canonicalRestaurantName(value) {
   const original = String(value || "").trim();
   const key = revenueNameKey(original);
   if (!key) return "";
-  if (key.includes("белинского") && key.includes("61") && (key.includes("ribs") || key.includes("рибс"))) {
-    return "Белинского, 61 Ribs";
+  if (key.includes("белинского") && key.includes("61") && hasRibsMarker(original)) {
+    return "Белинского, 61 Рибс";
   }
   if (key.includes("белинского") && key.includes("61") && key.includes("достав")) {
     return "Белинского, 61 Самурай";
@@ -348,8 +353,8 @@ function splitRevenueWarehouseName(name) {
     restaurant = "Октябрьская, 1 Vinedo";
   } else if (key.includes("белинского") && key.includes("61") && key.includes("достав")) {
     restaurant = "Белинского, 61 доставка Самурай";
-  } else if ((key.includes("белинского") && key.includes("61") && (key.includes("ribs") || key.includes("рибс"))) || /^RIBS\b/i.test(original)) {
-    restaurant = "Белинского, 61 Ribs";
+  } else if ((key.includes("белинского") && key.includes("61") && hasRibsMarker(original)) || /^RIBS\b/i.test(original) || hasRibsMarker(original)) {
+    restaurant = "Белинского, 61 Рибс";
   } else if (key.includes("белинского") && key.includes("61")) {
     restaurant = "Белинского, 61 Самурай";
   } else if ((key.includes("гагарина") && key.includes("35")) || key.includes("парк швейцария")) {
