@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Аналитика персонала по проходной</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=2.0.2" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -73,29 +73,42 @@
       </div>
     </details>
 
-    <section class="panel filters">
-      <div>
-        <label class="label" for="restaurantSelect">Рестораны (мультивыбор)</label>
-        <select id="restaurantSelect" multiple size="10"></select>
+    <section class="panel filtersPanel">
+      <div class="filterIntro">
+        <h3 class="panelTitle">Фильтры расчёта</h3>
+        <p class="hint">Выберите рестораны, состав выручки и группы сотрудников.</p>
       </div>
 
-      <div>
-        <label class="label" for="warehouseTypeSelect">Тип склада выручки</label>
-        <select id="warehouseTypeSelect" multiple size="4">
-          <option value="all" selected>Все</option>
-          <option value="kitchen">Кухня</option>
-          <option value="bar">Бар</option>
-          <option value="single">Один склад</option>
-        </select>
-        <p class="hint">Ctrl/Cmd + клик для выбора нескольких.</p>
-      </div>
+      <div class="filtersLayout">
+        <div class="filterCard restaurantFilter">
+          <label class="filterHeading" for="restaurantSelect">Рестораны</label>
+          <p class="filterHint">Можно выбрать несколько точек</p>
+          <select id="restaurantSelect" multiple size="10">
+            <option disabled selected>Появятся после загрузки данных</option>
+          </select>
+        </div>
 
-      <div>
-        <span class="label">Группы должностей</span>
-        <label class="check"><input type="checkbox" class="groupCheck" value="Кухня" checked> Кухня (повара, шеф-повара, су-шефы)</label>
-        <label class="check"><input type="checkbox" class="groupCheck" value="Зал" checked> Зал (официанты, менеджеры зала, мойки, администраторы-кассиры, операторы)</label>
-        <label class="check"><input type="checkbox" class="groupCheck" value="Доставка" checked> Доставка (логисты, курьеры, водители)</label>
-        <label class="check"><input type="checkbox" class="groupCheck" value="Бар" checked> Бар (бармен, барменеджер, барбэк)</label>
+        <div class="filterSide">
+          <fieldset class="filterCard warehouseFilter">
+            <legend class="filterHeading">Выручка по складам</legend>
+            <div class="segmentedControl" id="warehouseTypeControl">
+              <label><input type="radio" name="warehouseType" value="all" checked><span>Все склады</span></label>
+              <label><input type="radio" name="warehouseType" value="kitchen"><span>Кухня</span></label>
+              <label><input type="radio" name="warehouseType" value="bar"><span>Бар</span></label>
+              <label><input type="radio" name="warehouseType" value="single"><span>Один склад</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="filterCard roleFilter">
+            <legend class="filterHeading">Группы должностей</legend>
+            <div class="roleGrid">
+              <label class="roleOption"><input type="checkbox" class="groupCheck" value="Кухня" checked><span><strong>Кухня</strong><small>Повара, шефы, су-шефы</small></span></label>
+              <label class="roleOption"><input type="checkbox" class="groupCheck" value="Зал" checked><span><strong>Зал</strong><small>Официанты, менеджеры, кассиры</small></span></label>
+              <label class="roleOption"><input type="checkbox" class="groupCheck" value="Доставка" checked><span><strong>Доставка</strong><small>Логисты, курьеры, водители</small></span></label>
+              <label class="roleOption"><input type="checkbox" class="groupCheck" value="Бар" checked><span><strong>Бар</strong><small>Бармены, менеджеры, барбэки</small></span></label>
+            </div>
+          </fieldset>
+        </div>
       </div>
     </section>
 
@@ -130,6 +143,6 @@
     <footer class="footer">История версий: файл `versions.md`</footer>
   </main>
 
-  <script src="script.js?v=2.0.1"></script>
+  <script src="script.js?v=2.0.2"></script>
 </body>
 </html>

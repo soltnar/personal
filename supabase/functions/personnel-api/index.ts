@@ -6,8 +6,10 @@ const SABY_APP_CLIENT_ID = Deno.env.get("SABY_APP_CLIENT_ID")!;
 const SABY_APP_SECRET = Deno.env.get("SABY_APP_SECRET")!;
 const SABY_SERVICE_KEY = Deno.env.get("SABY_SERVICE_KEY")!;
 const ALLOWED_EMAIL = "soltnar@gmail.com";
-const PAGE_SIZE = 500;
+const PAGE_SIZE = 1000;
 const MAX_PAGES = 40;
+const PAGE_BATCH_SIZE = 4;
+const SABY_REQUEST_TIMEOUT_MS = 45_000;
 
 const cors = {
   "Access-Control-Allow-Origin": "https://soltnar.github.io",
@@ -116,11 +118,15 @@ function cleanText(value: unknown) {
 }
 
 async function fetchAttendance(from: string, to: string) {
+  const startedAt = Date.now();
   const token = await sabyToken();
   const rows: Record<string, unknown>[] = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
+  let pagesLoaded = 0;
+
+  const fetchPage = async (page: number) => {
     const response = await fetch("https://online.saby.ru/service/", {
       method: "POST",
+      signal: AbortSignal.timeout(SABY_REQUEST_TIMEOUT_MS),
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "X-SBISAccessToken": token,
@@ -133,10 +139,24 @@ async function fetchAttendance(from: string, to: string) {
     if (!response.ok || data.error) {
       throw new Error(`Saby не вернул проходную: ${data.error?.message || response.status}`);
     }
-    const pageRows = rowsFromResult(data.result);
-    rows.push(...pageRows);
-    if (pageRows.length < PAGE_SIZE || data.result?.n === false) break;
-    if (page === MAX_PAGES - 1) throw new Error("Превышен лимит страниц проходной");
+    return {
+      rows: rowsFromResult(data.result),
+      hasMore: data.result?.n !== false,
+    };
+  };
+
+  for (let page = 0; page < MAX_PAGES; page += PAGE_BATCH_SIZE) {
+    const pageNumbers = Array.from(
+      { length: Math.min(PAGE_BATCH_SIZE, MAX_PAGES - page) },
+      (_, index) => page + index,
+    );
+    const batch = await Promise.all(pageNumbers.map(fetchPage));
+    pagesLoaded += batch.length;
+    batch.forEach((result) => rows.push(...result.rows));
+
+    const reachedEnd = batch.some((result) => result.rows.length < PAGE_SIZE || !result.hasMore);
+    if (reachedEnd) break;
+    if (page + PAGE_BATCH_SIZE >= MAX_PAGES) throw new Error("Превышен лимит страниц проходной");
   }
 
   const unique = new Map<string, Record<string, unknown>>();
@@ -160,7 +180,16 @@ async function fetchAttendance(from: string, to: string) {
     const key = [normalized.dateTime, normalized.actionType, normalized.person, normalized.accessPoint].join("|");
     unique.set(key, normalized);
   });
-  return [...unique.values()];
+  console.log(JSON.stringify({
+    event: "attendance_loaded",
+    from,
+    to,
+    pagesLoaded,
+    sourceRows: rows.length,
+    uniqueRows: unique.size,
+    elapsedMs: Date.now() - startedAt,
+  }));
+  return { rows: [...unique.values()], pagesLoaded, elapsedMs: Date.now() - startedAt };
 }
 
 Deno.serve(async (req) => {
@@ -172,8 +201,14 @@ Deno.serve(async (req) => {
     const from = url.searchParams.get("from") || "";
     const to = url.searchParams.get("to") || "";
     validatePeriod(from, to);
-    const rows = await fetchAttendance(from, to);
-    return json({ from, to, generatedAt: new Date().toISOString(), rows });
+    const attendance = await fetchAttendance(from, to);
+    return json({
+      from,
+      to,
+      generatedAt: new Date().toISOString(),
+      rows: attendance.rows,
+      diagnostics: { pages: attendance.pagesLoaded, elapsedMs: attendance.elapsedMs },
+    });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Ошибка сервера" }, 400);
   }

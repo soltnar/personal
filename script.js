@@ -1,4 +1,4 @@
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "2.0.2";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -8,7 +8,7 @@ const revenueInput = document.getElementById("revenueInput");
 const statusEl = document.getElementById("status");
 const dateSelect = document.getElementById("dateSelect");
 const restaurantSelect = document.getElementById("restaurantSelect");
-const warehouseTypeSelect = document.getElementById("warehouseTypeSelect");
+const warehouseTypeControl = document.getElementById("warehouseTypeControl");
 const calcBtn = document.getElementById("calcBtn");
 const csvBtn = document.getElementById("csvBtn");
 const xlsxBtn = document.getElementById("xlsxBtn");
@@ -339,20 +339,31 @@ async function loadSabyFromApi() {
 
   sabyApiLoading = true;
   updateRevenueDbButtons();
+  loadSabyBtn.classList.add("is-busy");
+  loadSabyBtn.setAttribute("aria-busy", "true");
   setSabyApiStatus(`Получаем проходную и подразделения за ${from} - ${to}…`, "loading");
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 140000);
     const response = await fetch(`${PERSONNEL_API_URL}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
       method: "GET",
       cache: "no-store",
+      signal: controller.signal,
       headers: {
         Authorization: `Bearer ${revenueDbSession.access_token}`,
         apikey: SUPABASE_PUBLISHABLE_KEY,
         "Content-Type": "application/json"
       }
     });
+    clearTimeout(timeoutId);
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `Ошибка ${response.status}`);
+    if (!response.ok) {
+      const message = response.status === 546
+        ? "Saby отвечает слишком долго, сервер прервал запрос"
+        : payload.error || `Ошибка ${response.status}`;
+      throw new Error(message);
+    }
     if (!Array.isArray(payload.rows)) throw new Error("Saby вернул неизвестный формат данных");
 
     const prepared = prepareSabyData(payload.rows, from, to);
@@ -362,14 +373,17 @@ async function loadSabyFromApi() {
     lastResultRows = calculate(mappedRecords);
     renderTable(lastResultRows);
     setSabyApiStatus(
-      `Готово: получено ${payload.rows.length} событий, в расчёт вошло ${prepared.attendance.length}. Подразделений: ${prepared.staff.map.size}.`,
+      `Готово за ${Math.max(1, Math.round((payload.diagnostics?.elapsedMs || 0) / 1000))} сек.: получено ${payload.rows.length} событий, в расчёт вошло ${prepared.attendance.length}. Подразделений: ${prepared.staff.map.size}.`,
       "success"
     );
     await loadRevenueFromDatabase({ silent: true });
   } catch (error) {
-    setSabyApiStatus(`Не удалось загрузить данные Saby: ${error.message || "неизвестная ошибка"}. Доступна резервная загрузка Excel.`, "error");
+    const message = error?.name === "AbortError" ? "сервер не ответил за 140 секунд" : error.message;
+    setSabyApiStatus(`Не удалось загрузить данные Saby: ${message || "неизвестная ошибка"}. Доступна резервная загрузка Excel.`, "error");
   } finally {
     sabyApiLoading = false;
+    loadSabyBtn.classList.remove("is-busy");
+    loadSabyBtn.removeAttribute("aria-busy");
     updateRevenueDbButtons();
   }
 }
@@ -732,7 +746,8 @@ function getRevenueWarehouseKind(name) {
 }
 
 function getSelectedWarehouseTypes() {
-  return getSelectedValues(warehouseTypeSelect);
+  const selected = document.querySelector('input[name="warehouseType"]:checked');
+  return selected ? [selected.value] : ["all"];
 }
 
 function revenueMatchesWarehouseType(row) {
@@ -1278,7 +1293,7 @@ if (loadSabyBtn) loadSabyBtn.addEventListener("click", loadSabyFromApi);
 if (sabyFromInput) sabyFromInput.addEventListener("change", updateRevenueDbButtons);
 if (sabyToInput) sabyToInput.addEventListener("change", updateRevenueDbButtons);
 
-warehouseTypeSelect.addEventListener("change", () => {
+warehouseTypeControl.addEventListener("change", () => {
   if (!mappedRecords.length) return;
   summaryEl.textContent = "Тип склада выручки изменен. Нажмите «Рассчитать».";
 });
