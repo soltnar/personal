@@ -69,6 +69,66 @@ h1 {
   grid-column: 1 / -1;
 }
 
+.autoDataPanel {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(260px, 1fr);
+  gap: 16px 24px;
+  align-items: end;
+}
+
+.periodFields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.periodFields .label {
+  margin: 0;
+}
+
+.periodFields input {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+}
+
+.fallbackPanel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.fallbackPanel > summary {
+  padding: 16px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 17px;
+  color: #24453e;
+  background: #f8fbf9;
+}
+
+.fallbackPanel > summary:hover {
+  background: #f0f6f3;
+}
+
+.fallbackContent {
+  padding: 4px 16px 18px;
+}
+
+.manualBlock {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.compactStatus {
+  margin-top: -8px;
+}
+
 .filters {
   display: grid;
   grid-template-columns: 1fr 2fr 1.4fr 2fr;
@@ -220,11 +280,22 @@ th {
 
 @media (max-width: 900px) {
   .uploadGrid,
-  .filters {
+  .filters,
+  .autoDataPanel {
     grid-template-columns: 1fr;
   }
 
+  .periodFields {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .detailsWrap {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .periodFields {
     grid-template-columns: 1fr;
   }
 }

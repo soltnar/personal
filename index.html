@@ -16,50 +16,61 @@
     </div>
     <p class="subtitle">Источник данных: проходная. Смена: больше 7 часов = 1, до 7 часов = 0.5. Сутки считаются с 04:00 до 03:59.</p>
 
-    <section class="panel uploadGrid">
-      <div class="uploadWide">
-        <label class="label" for="universalInput">Общая загрузка файлов (автоопределение)</label>
-        <input id="universalInput" type="file" accept=".xlsx,.xls" multiple />
-        <p class="hint">Можно выбрать сразу 3 файла. Сайт сам определит: проходная, список сотрудников или выручки.</p>
-      </div>
+    <section class="panel autoDataPanel">
       <div>
-        <label class="label" for="attendanceInput">Файл проходной</label>
-        <input id="attendanceInput" type="file" accept=".xlsx,.xls" />
+        <h3 class="panelTitle">Автоматическая загрузка из Saby</h3>
+        <p class="hint">Выберите период: сайт получит события проходной, должности и подразделения сотрудников, затем подтянет выручку.</p>
       </div>
-      <div>
-        <label class="label" for="staffInput">Список сотрудников (для ресторана по ФИО)</label>
-        <input id="staffInput" type="file" accept=".xlsx,.xls" />
-      </div>
-      <div>
-        <label class="label" for="revenueInput">Файл выручек (резервный вариант)</label>
-        <input id="revenueInput" type="file" accept=".xlsx,.xls" />
-        <p class="hint">Обычно выручка подтягивается из базы, Excel нужен только если база недоступна.</p>
-      </div>
-      <p id="status" class="status">Загрузите файл проходной.</p>
-    </section>
-
-    <section class="panel revenueDbPanel">
-      <div>
-        <h3 class="panelTitle">Выручка из базы</h3>
-        <p class="hint">После загрузки проходной сайт берет даты из фильтра и подтягивает сохраненную выручку из проекта «Выручка по ресторанам».</p>
+      <div class="periodFields">
+        <label class="label" for="sabyFrom">С даты
+          <input id="sabyFrom" type="date" />
+        </label>
+        <label class="label" for="sabyTo">По дату
+          <input id="sabyTo" type="date" />
+        </label>
       </div>
       <div class="revenueDbActions">
         <button id="revenueDbLogin" type="button">Войти через Google</button>
         <button id="revenueDbLogout" type="button" class="secondaryBtn" hidden>Выйти</button>
-        <button id="loadRevenueDbBtn" type="button">Подтянуть выручку из базы</button>
+        <button id="loadSabyBtn" type="button">Загрузить данные из Saby</button>
+        <button id="loadRevenueDbBtn" type="button" class="secondaryBtn">Обновить только выручку</button>
       </div>
-      <p id="revenueDbStatus" class="status">Проверяем доступ к базе выручки…</p>
+      <p id="sabyApiStatus" class="status">Проверяем доступ к Saby…</p>
+      <p id="revenueDbStatus" class="status compactStatus">Выручка будет загружена после проходной.</p>
+      <p id="status" class="status compactStatus">Данные проходной пока не загружены.</p>
     </section>
 
-    <section class="panel">
-      <h3 class="panelTitle">Где взять файлы в Saby</h3>
-      <ol class="manualList">
-        <li>Файл проходной: <a href="https://online.saby.ru/page/work-schedule" target="_blank" rel="noopener noreferrer">открыть Графики работ</a> → <code>Пришел/ушел</code>, выбрать период и фильтр <code>Проходная</code>, нажать <code>Выгрузить</code>.</li>
-        <li>Список сотрудников: <a href="https://online.saby.ru/page/staff-list" target="_blank" rel="noopener noreferrer">открыть Сотрудники</a>, в фильтре выбрать <code>Работающие за нужный месяц</code>.</li>
-        <li>Перед выгрузкой списка убрать подразделения, которые дают дубли (<code>Сдача отчетности</code> и сторонние организации).</li>
-        <li>Далее <code>Меню → Выгрузить → Список сотрудников в Excel</code> (набор данных <code>Основная информация</code>).</li>
-      </ol>
-    </section>
+    <details class="panel fallbackPanel">
+      <summary>Резервная загрузка Excel</summary>
+      <div class="uploadGrid fallbackContent">
+        <div class="uploadWide">
+          <label class="label" for="universalInput">Общая загрузка файлов (автоопределение)</label>
+          <input id="universalInput" type="file" accept=".xlsx,.xls" multiple />
+          <p class="hint">Можно выбрать сразу 3 файла. Сайт сам определит: проходная, список сотрудников или выручки.</p>
+        </div>
+        <div>
+          <label class="label" for="attendanceInput">Файл проходной</label>
+          <input id="attendanceInput" type="file" accept=".xlsx,.xls" />
+        </div>
+        <div>
+          <label class="label" for="staffInput">Список сотрудников</label>
+          <input id="staffInput" type="file" accept=".xlsx,.xls" />
+        </div>
+        <div>
+          <label class="label" for="revenueInput">Файл выручек</label>
+          <input id="revenueInput" type="file" accept=".xlsx,.xls" />
+        </div>
+        <div class="uploadWide manualBlock">
+          <h3 class="panelTitle">Где взять файлы в Saby</h3>
+          <ol class="manualList">
+            <li>Файл проходной: <a href="https://online.saby.ru/page/work-schedule" target="_blank" rel="noopener noreferrer">открыть Графики работ</a> → <code>Пришел/ушел</code>, выбрать период и фильтр <code>Проходная</code>, нажать <code>Выгрузить</code>.</li>
+            <li>Список сотрудников: <a href="https://online.saby.ru/page/staff-list" target="_blank" rel="noopener noreferrer">открыть Сотрудники</a>, в фильтре выбрать <code>Работающие за нужный месяц</code>.</li>
+            <li>Перед выгрузкой списка убрать подразделения, которые дают дубли (<code>Сдача отчетности</code> и сторонние организации).</li>
+            <li>Далее <code>Меню → Выгрузить → Список сотрудников в Excel</code> (набор данных <code>Основная информация</code>).</li>
+          </ol>
+        </div>
+      </div>
+    </details>
 
     <section class="panel filters">
       <div>
@@ -123,6 +134,6 @@
     <footer class="footer">История версий: файл `versions.md`</footer>
   </main>
 
-  <script src="script.js?v=1.9.0"></script>
+  <script src="script.js?v=2.0.0"></script>
 </body>
 </html>

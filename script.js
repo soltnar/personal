@@ -1,4 +1,4 @@
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "2.0.0";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -19,10 +19,15 @@ const revenueDbStatusEl = document.getElementById("revenueDbStatus");
 const revenueDbLoginBtn = document.getElementById("revenueDbLogin");
 const revenueDbLogoutBtn = document.getElementById("revenueDbLogout");
 const loadRevenueDbBtn = document.getElementById("loadRevenueDbBtn");
+const sabyFromInput = document.getElementById("sabyFrom");
+const sabyToInput = document.getElementById("sabyTo");
+const loadSabyBtn = document.getElementById("loadSabyBtn");
+const sabyApiStatusEl = document.getElementById("sabyApiStatus");
 
 const SUPABASE_URL = "https://wqxbnwcdkobgeyhdmqup.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_WzfB8mJAOBXpeNWa34hBEQ_11QhCyqa";
 const REVENUE_API_URL = `${SUPABASE_URL}/functions/v1/revenue-api`;
+const PERSONNEL_API_URL = `${SUPABASE_URL}/functions/v1/personnel-api`;
 
 let baseRecords = [];
 let mappedRecords = [];
@@ -36,8 +41,25 @@ let revenueStats = { rows: 0, matched: 0 };
 let supabaseClient = null;
 let revenueDbSession = null;
 let revenueDbLoading = false;
+let sabyApiLoading = false;
 
 appVersionEl.textContent = APP_VERSION;
+
+function isoLocalDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function setDefaultSabyPeriod() {
+  if (!sabyFromInput || !sabyToInput) return;
+  const today = new Date();
+  const weekAgo = new Date(today);
+  weekAgo.setDate(today.getDate() - 7);
+  sabyFromInput.value ||= isoLocalDate(weekAgo);
+  sabyToInput.value ||= isoLocalDate(today);
+}
 
 function excelDateToSerialDay(value) {
   const days = Number(value);
@@ -155,17 +177,27 @@ function setRevenueDbStatus(message, kind = "") {
   revenueDbStatusEl.className = `status${kind ? ` is-${kind}` : ""}`;
 }
 
+function setSabyApiStatus(message, kind = "") {
+  if (!sabyApiStatusEl) return;
+  sabyApiStatusEl.textContent = message;
+  sabyApiStatusEl.className = `status${kind ? ` is-${kind}` : ""}`;
+}
+
 function updateRevenueDbButtons() {
   if (!revenueDbLoginBtn || !revenueDbLogoutBtn || !loadRevenueDbBtn) return;
   const signedIn = Boolean(revenueDbSession?.access_token);
   revenueDbLoginBtn.hidden = signedIn;
   revenueDbLogoutBtn.hidden = !signedIn;
   loadRevenueDbBtn.disabled = revenueDbLoading || !signedIn || !dateSelect.options.length;
+  if (loadSabyBtn) {
+    loadSabyBtn.disabled = sabyApiLoading || !signedIn || !sabyFromInput?.value || !sabyToInput?.value;
+  }
 }
 
 async function initRevenueDatabase() {
   if (!window.supabase?.createClient) {
     setRevenueDbStatus("Библиотека Supabase не загрузилась. Можно использовать Excel-файл выручек как резерв.", "error");
+    setSabyApiStatus("Автоматическая загрузка недоступна. Откройте резервную загрузку Excel.", "error");
     updateRevenueDbButtons();
     return;
   }
@@ -180,15 +212,22 @@ async function initRevenueDatabase() {
       : "Для автозагрузки выручки войдите через Google. Excel-файл выручек остается резервным вариантом.",
     revenueDbSession ? "success" : ""
   );
+  setSabyApiStatus(
+    revenueDbSession
+      ? "Доступ подтверждён. Выберите период и загрузите данные."
+      : "Для автоматической загрузки войдите через Google.",
+    revenueDbSession ? "success" : ""
+  );
 
   supabaseClient.auth.onAuthStateChange((_event, session) => {
     revenueDbSession = session;
     updateRevenueDbButtons();
     if (session) {
       setRevenueDbStatus("Вход выполнен. Можно подтянуть выручку из базы.", "success");
-      if (dateSelect.options.length) loadRevenueFromDatabase({ silent: true });
+      setSabyApiStatus("Вход выполнен. Выберите период и нажмите «Загрузить данные из Saby».", "success");
     } else {
       setRevenueDbStatus("Для автозагрузки выручки войдите через Google.", "");
+      setSabyApiStatus("Для автоматической загрузки войдите через Google.", "");
     }
   });
 }
@@ -213,6 +252,7 @@ async function signOutRevenueDatabase() {
   revenueDbSession = null;
   updateRevenueDbButtons();
   setRevenueDbStatus("Вы вышли из базы выручки. Excel-файл выручек остается доступен вручную.", "");
+  setSabyApiStatus("Вы вышли. Автоматическая загрузка приостановлена.", "");
 }
 
 function getRevenueDbDateRange() {
@@ -221,6 +261,117 @@ function getRevenueDbDateRange() {
   const validDates = dates.filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)).sort();
   if (!validDates.length) return null;
   return { from: validDates[0], to: validDates[validDates.length - 1] };
+}
+
+function parseSabyDateTime(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second = "0"] = match;
+  const dayNumber = Math.floor(Date.UTC(Number(year), Number(month) - 1, Number(day)) / 86400000);
+  const timeSec = Number(hour) * 3600 + Number(minute) * 60 + Number(second);
+  const operationalDay = timeSec < DAY_CUTOFF_SECONDS ? dayNumber - 1 : dayNumber;
+  const operationalDate = new Date(operationalDay * 86400000).toISOString().slice(0, 10);
+  return { dateIso: operationalDate, absSec: dayNumber * 86400 + timeSec };
+}
+
+function prepareSabyData(rows, from, to) {
+  const departmentSets = new Map();
+  const departmentLabels = new Map();
+  const attendance = [];
+
+  rows.forEach((row) => {
+    const person = String(row.person || "").trim();
+    const personKey = normalizeFio(person);
+    const timing = parseSabyDateTime(row.dateTime);
+    const group = classifyRole(row.position);
+    const department = canonicalRestaurantName(row.department);
+    if (!personKey || !timing || !group || timing.dateIso < from || timing.dateIso > to) return;
+
+    if (department && !isNonRestaurantDepartment(department)) {
+      if (!departmentSets.has(personKey)) departmentSets.set(personKey, new Set());
+      departmentSets.get(personKey).add(department);
+      departmentLabels.set(personKey, department);
+    }
+
+    attendance.push({
+      dateIso: timing.dateIso,
+      absSec: timing.absSec,
+      person,
+      personKey,
+      group,
+      direction: Number(row.actionType) === 1 ? "Вход" : "Выход",
+      restaurantFromGate: String(row.address || "").trim() || "Не указан"
+    });
+  });
+
+  const map = new Map();
+  const conflictKeys = new Set();
+  let conflicts = 0;
+  departmentSets.forEach((departments, personKey) => {
+    const values = [...departments];
+    if (values.length === 1) map.set(personKey, values[0]);
+    if (values.length > 1) {
+      conflicts += 1;
+      conflictKeys.add(personKey);
+      map.set(personKey, departmentLabels.get(personKey));
+    }
+  });
+
+  return { attendance, staff: { map, conflicts, conflictKeys } };
+}
+
+async function loadSabyFromApi() {
+  if (sabyApiLoading || !supabaseClient) return;
+  const from = sabyFromInput?.value || "";
+  const to = sabyToInput?.value || "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
+    setSabyApiStatus("Проверьте даты периода.", "error");
+    return;
+  }
+
+  const { data } = await supabaseClient.auth.getSession();
+  revenueDbSession = data.session;
+  if (!revenueDbSession?.access_token) {
+    setSabyApiStatus("Сначала войдите через Google.", "error");
+    updateRevenueDbButtons();
+    return;
+  }
+
+  sabyApiLoading = true;
+  updateRevenueDbButtons();
+  setSabyApiStatus(`Получаем проходную и подразделения за ${from} - ${to}…`, "loading");
+
+  try {
+    const response = await fetch(`${PERSONNEL_API_URL}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        Authorization: `Bearer ${revenueDbSession.access_token}`,
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        "Content-Type": "application/json"
+      }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Ошибка ${response.status}`);
+    if (!Array.isArray(payload.rows)) throw new Error("Saby вернул неизвестный формат данных");
+
+    const prepared = prepareSabyData(payload.rows, from, to);
+    if (!prepared.attendance.length) throw new Error("За выбранный период не найдено событий проходной по учитываемым должностям");
+    applyStaffData(prepared.staff);
+    applyAttendanceData(prepared.attendance);
+    lastResultRows = calculate(mappedRecords);
+    renderTable(lastResultRows);
+    setSabyApiStatus(
+      `Готово: получено ${payload.rows.length} событий, в расчёт вошло ${prepared.attendance.length}. Подразделений: ${prepared.staff.map.size}.`,
+      "success"
+    );
+    await loadRevenueFromDatabase({ silent: true });
+  } catch (error) {
+    setSabyApiStatus(`Не удалось загрузить данные Saby: ${error.message || "неизвестная ошибка"}. Доступна резервная загрузка Excel.`, "error");
+  } finally {
+    sabyApiLoading = false;
+    updateRevenueDbButtons();
+  }
 }
 
 async function loadRevenueFromDatabase(options = {}) {
@@ -1062,7 +1213,7 @@ function exportExcelPivot(rows) {
 
 function refreshStatus() {
   if (!baseRecords.length) {
-    statusEl.textContent = "Загрузите файл проходной.";
+    statusEl.textContent = "Данные проходной пока не загружены.";
     return;
   }
 
@@ -1123,6 +1274,9 @@ revenueInput.addEventListener("change", async (e) => {
 if (revenueDbLoginBtn) revenueDbLoginBtn.addEventListener("click", signInRevenueDatabase);
 if (revenueDbLogoutBtn) revenueDbLogoutBtn.addEventListener("click", signOutRevenueDatabase);
 if (loadRevenueDbBtn) loadRevenueDbBtn.addEventListener("click", () => loadRevenueFromDatabase());
+if (loadSabyBtn) loadSabyBtn.addEventListener("click", loadSabyFromApi);
+if (sabyFromInput) sabyFromInput.addEventListener("change", updateRevenueDbButtons);
+if (sabyToInput) sabyToInput.addEventListener("change", updateRevenueDbButtons);
 
 warehouseTypeSelect.addEventListener("change", () => {
   if (!mappedRecords.length) return;
@@ -1148,7 +1302,7 @@ universalInput.addEventListener("change", async (e) => {
 
 calcBtn.addEventListener("click", () => {
   if (!mappedRecords.length) {
-    summaryEl.textContent = "Сначала загрузите файл проходной.";
+    summaryEl.textContent = "Сначала загрузите данные из Saby или откройте резервную загрузку Excel.";
     return;
   }
   const checkedGroups = getCheckedGroups();
@@ -1182,4 +1336,5 @@ xlsxBtn.addEventListener("click", () => {
   exportExcelPivot(lastResultRows);
 });
 
+setDefaultSabyPeriod();
 initRevenueDatabase();
