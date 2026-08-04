@@ -6,6 +6,7 @@
   <title>Аналитика персонала по проходной</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
 <body>
   <main class="app">
@@ -30,10 +31,24 @@
         <input id="staffInput" type="file" accept=".xlsx,.xls" />
       </div>
       <div>
-        <label class="label" for="revenueInput">Файл выручек</label>
+        <label class="label" for="revenueInput">Файл выручек (резервный вариант)</label>
         <input id="revenueInput" type="file" accept=".xlsx,.xls" />
+        <p class="hint">Обычно выручка подтягивается из базы, Excel нужен только если база недоступна.</p>
       </div>
       <p id="status" class="status">Загрузите файл проходной.</p>
+    </section>
+
+    <section class="panel revenueDbPanel">
+      <div>
+        <h3 class="panelTitle">Выручка из базы</h3>
+        <p class="hint">После загрузки проходной сайт берет даты из фильтра и подтягивает сохраненную выручку из проекта «Выручка по ресторанам».</p>
+      </div>
+      <div class="revenueDbActions">
+        <button id="revenueDbLogin" type="button">Войти через Google</button>
+        <button id="revenueDbLogout" type="button" class="secondaryBtn" hidden>Выйти</button>
+        <button id="loadRevenueDbBtn" type="button">Подтянуть выручку из базы</button>
+      </div>
+      <p id="revenueDbStatus" class="status">Проверяем доступ к базе выручки…</p>
     </section>
 
     <section class="panel">
@@ -108,6 +123,6 @@
     <footer class="footer">История версий: файл `versions.md`</footer>
   </main>
 
-  <script src="script.js?v=1.8.7"></script>
+  <script src="script.js?v=1.9.0"></script>
 </body>
 </html>

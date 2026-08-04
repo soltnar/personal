@@ -240,3 +240,30 @@ th {
   font-size: 11px;
   vertical-align: middle;
 }
+
+.revenueDbPanel {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.revenueDbActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.secondaryBtn {
+  background: #6b7f78;
+}
+
+.status.is-success { color: #0d6b5a; }
+.status.is-error { color: #b13d2e; }
+.status.is-loading { color: #8a6420; }
+
+@media (max-width: 760px) {
+  .revenueDbPanel { grid-template-columns: 1fr; }
+  .revenueDbActions { justify-content: flex-start; }
+}

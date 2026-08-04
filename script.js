@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8.7";
+const APP_VERSION = "1.9.0";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -15,6 +15,14 @@ const xlsxBtn = document.getElementById("xlsxBtn");
 const summaryEl = document.getElementById("summary");
 const tableBody = document.querySelector("#resultTable tbody");
 const appVersionEl = document.getElementById("appVersion");
+const revenueDbStatusEl = document.getElementById("revenueDbStatus");
+const revenueDbLoginBtn = document.getElementById("revenueDbLogin");
+const revenueDbLogoutBtn = document.getElementById("revenueDbLogout");
+const loadRevenueDbBtn = document.getElementById("loadRevenueDbBtn");
+
+const SUPABASE_URL = "https://wqxbnwcdkobgeyhdmqup.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_WzfB8mJAOBXpeNWa34hBEQ_11QhCyqa";
+const REVENUE_API_URL = `${SUPABASE_URL}/functions/v1/revenue-api`;
 
 let baseRecords = [];
 let mappedRecords = [];
@@ -25,6 +33,9 @@ let mappingStats = { matched: 0, total: 0 };
 let lastResultRows = [];
 let revenueRows = [];
 let revenueStats = { rows: 0, matched: 0 };
+let supabaseClient = null;
+let revenueDbSession = null;
+let revenueDbLoading = false;
 
 appVersionEl.textContent = APP_VERSION;
 
@@ -136,6 +147,153 @@ function getSelectedValues(selectEl) {
 
 function getCheckedGroups() {
   return Array.from(document.querySelectorAll(".groupCheck:checked")).map((el) => el.value);
+}
+
+function setRevenueDbStatus(message, kind = "") {
+  if (!revenueDbStatusEl) return;
+  revenueDbStatusEl.textContent = message;
+  revenueDbStatusEl.className = `status${kind ? ` is-${kind}` : ""}`;
+}
+
+function updateRevenueDbButtons() {
+  if (!revenueDbLoginBtn || !revenueDbLogoutBtn || !loadRevenueDbBtn) return;
+  const signedIn = Boolean(revenueDbSession?.access_token);
+  revenueDbLoginBtn.hidden = signedIn;
+  revenueDbLogoutBtn.hidden = !signedIn;
+  loadRevenueDbBtn.disabled = revenueDbLoading || !signedIn || !dateSelect.options.length;
+}
+
+async function initRevenueDatabase() {
+  if (!window.supabase?.createClient) {
+    setRevenueDbStatus("Библиотека Supabase не загрузилась. Можно использовать Excel-файл выручек как резерв.", "error");
+    updateRevenueDbButtons();
+    return;
+  }
+
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  const { data } = await supabaseClient.auth.getSession();
+  revenueDbSession = data.session;
+  updateRevenueDbButtons();
+  setRevenueDbStatus(
+    revenueDbSession
+      ? "Доступ к базе выручки есть. После загрузки проходной выручка подтянется автоматически."
+      : "Для автозагрузки выручки войдите через Google. Excel-файл выручек остается резервным вариантом.",
+    revenueDbSession ? "success" : ""
+  );
+
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    revenueDbSession = session;
+    updateRevenueDbButtons();
+    if (session) {
+      setRevenueDbStatus("Вход выполнен. Можно подтянуть выручку из базы.", "success");
+      if (dateSelect.options.length) loadRevenueFromDatabase({ silent: true });
+    } else {
+      setRevenueDbStatus("Для автозагрузки выручки войдите через Google.", "");
+    }
+  });
+}
+
+async function signInRevenueDatabase() {
+  if (!supabaseClient) return;
+  revenueDbLoginBtn.disabled = true;
+  setRevenueDbStatus("Открываем вход через Google…", "loading");
+  const { error } = await supabaseClient.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: "https://soltnar.github.io/personal/" }
+  });
+  if (error) {
+    setRevenueDbStatus(`Не удалось открыть вход: ${error.message}`, "error");
+    revenueDbLoginBtn.disabled = false;
+  }
+}
+
+async function signOutRevenueDatabase() {
+  if (!supabaseClient) return;
+  await supabaseClient.auth.signOut();
+  revenueDbSession = null;
+  updateRevenueDbButtons();
+  setRevenueDbStatus("Вы вышли из базы выручки. Excel-файл выручек остается доступен вручную.", "");
+}
+
+function getRevenueDbDateRange() {
+  const selected = getSelectedValues(dateSelect);
+  const dates = selected.length ? selected : Array.from(dateSelect.options).map((option) => option.value);
+  const validDates = dates.filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)).sort();
+  if (!validDates.length) return null;
+  return { from: validDates[0], to: validDates[validDates.length - 1] };
+}
+
+async function loadRevenueFromDatabase(options = {}) {
+  if (revenueDbLoading) return;
+  if (!supabaseClient) {
+    setRevenueDbStatus("База выручки пока недоступна. Используйте Excel-файл выручек.", "error");
+    return;
+  }
+  const range = getRevenueDbDateRange();
+  if (!range) {
+    setRevenueDbStatus("Сначала загрузите проходную, чтобы появились даты для запроса выручки.", "");
+    updateRevenueDbButtons();
+    return;
+  }
+
+  const { data } = await supabaseClient.auth.getSession();
+  revenueDbSession = data.session;
+  if (!revenueDbSession?.access_token) {
+    setRevenueDbStatus("Для автозагрузки выручки войдите через Google.", "");
+    updateRevenueDbButtons();
+    return;
+  }
+
+  revenueDbLoading = true;
+  updateRevenueDbButtons();
+  if (!options.silent) setRevenueDbStatus(`Читаем выручку из базы за ${range.from} - ${range.to}…`, "loading");
+
+  try {
+    const response = await fetch(`${REVENUE_API_URL}?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`, {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        Authorization: `Bearer ${revenueDbSession.access_token}`,
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        "Content-Type": "application/json"
+      }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Ошибка ${response.status}`);
+    if (!Array.isArray(payload.rows)) throw new Error("База вернула неизвестный формат выручки");
+
+    const rows = payload.rows
+      .map((row) => ({
+        dateIso: String(row.date || ""),
+        warehouse: String(row.restaurant || "").trim(),
+        revenue: Number(row.revenue),
+        source: "База выручки"
+      }))
+      .filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(row.dateIso) && row.warehouse && Number.isFinite(row.revenue) && !isBlockedRevenueName(row.warehouse));
+
+    applyRevenueData(aggregateRevenueRows(rows));
+    if (lastResultRows.length) {
+      lastResultRows = calculate(mappedRecords);
+      renderTable(lastResultRows);
+    }
+
+    const loadedAt = payload.generatedAt ? new Date(payload.generatedAt).toLocaleString("ru-RU") : new Date().toLocaleString("ru-RU");
+    setRevenueDbStatus(`Выручка из базы загружена: ${rows.length} строк за ${range.from} - ${range.to}. ${loadedAt}.`, "success");
+    if (!options.silent) summaryEl.textContent = "Выручка из базы загружена. Нажмите «Рассчитать» или используйте текущий пересчет.";
+  } catch (error) {
+    setRevenueDbStatus(`Не удалось загрузить выручку из базы: ${error.message || "неизвестная ошибка"}. Можно загрузить Excel-файл выручек вручную.`, "error");
+  } finally {
+    revenueDbLoading = false;
+    updateRevenueDbButtons();
+    refreshStatus();
+  }
+}
+
+function maybeAutoLoadRevenueFromDatabase() {
+  updateRevenueDbButtons();
+  if (revenueDbSession?.access_token && dateSelect.options.length) {
+    loadRevenueFromDatabase({ silent: true });
+  }
 }
 
 function fillMultiSelect(selectEl, values, selectedValues = []) {
@@ -596,6 +754,7 @@ function applyAttendanceData(records) {
   csvBtn.disabled = true;
   xlsxBtn.disabled = true;
   refreshStatus();
+  maybeAutoLoadRevenueFromDatabase();
 }
 
 function applyRevenueData(rows) {
@@ -911,7 +1070,7 @@ function refreshStatus() {
   const staffPart = staffLoaded
     ? ` Список сотрудников: сопоставлено ${mappingStats.matched} из ${mappingStats.total} записей.${staffConflicts ? ` Конфликтов ФИО: ${staffConflicts}.` : ""}`
     : " Список сотрудников не загружен, рестораны не будут определены.";
-  const revenuePart = revenueRows.length ? ` Выручек: ${revenueRows.length} строк.` : " Файл выручек не загружен.";
+  const revenuePart = revenueRows.length ? ` Выручек: ${revenueRows.length} строк.` : " Выручка не загружена.";
 
   statusEl.textContent = `Записей проходной: ${baseRecords.length}.${staffPart}${revenuePart}`;
 }
@@ -960,6 +1119,10 @@ revenueInput.addEventListener("change", async (e) => {
     refreshStatus();
   }
 });
+
+if (revenueDbLoginBtn) revenueDbLoginBtn.addEventListener("click", signInRevenueDatabase);
+if (revenueDbLogoutBtn) revenueDbLogoutBtn.addEventListener("click", signOutRevenueDatabase);
+if (loadRevenueDbBtn) loadRevenueDbBtn.addEventListener("click", () => loadRevenueFromDatabase());
 
 warehouseTypeSelect.addEventListener("change", () => {
   if (!mappedRecords.length) return;
@@ -1018,3 +1181,5 @@ xlsxBtn.addEventListener("click", () => {
   if (!lastResultRows.length) return;
   exportExcelPivot(lastResultRows);
 });
+
+initRevenueDatabase();
