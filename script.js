@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8.3";
+const APP_VERSION = "1.8.4";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -72,8 +72,18 @@ function normalizeFio(text) {
 function canonicalRestaurantName(value) {
   const original = String(value || "").trim();
   const key = revenueNameKey(original);
+  if (!key) return "";
+  if (key.includes("белинского") && key.includes("61") && (key.includes("ribs") || key.includes("рибс"))) {
+    return "Белинского, 61 Ribs";
+  }
   if (key.includes("белинского") && key.includes("61") && key.includes("достав")) {
     return "Белинского, 61 Самурай";
+  }
+  if ((key.includes("б покровская") || key.includes("большая покровская") || key.includes("бп")) && key.includes("63")) {
+    return "Б. Покровская, 63 Самурай";
+  }
+  if ((key.includes("б покровская") || key.includes("большая покровская") || key.includes("бп")) && key.includes("59")) {
+    return "Б. Покровская, 59 Самурай";
   }
   if (key.includes("детский центр жюль верн") || (key.includes("ленина") && key.includes("64") && key.includes("ударник"))) {
     return "Ленина, 64 Ударник";
@@ -163,7 +173,8 @@ const DEFAULT_REVENUE_EXCLUSIONS = [
   "ул. Большая Покровская, д. 13",
   "Швейцария БИК \"ПРИСПЕХ\"",
   "Фабрика пекарня",
-  "Рождественская"
+  "Рождественская",
+  "ВЕНУСТО"
 ].map(revenueNameKey);
 
 function readWorkbook(arrayBuffer) {
@@ -319,9 +330,9 @@ function splitRevenueWarehouseName(name) {
   const key = revenueNameKey(original);
   let restaurant = original;
 
-  if (key.includes("бп 59")) {
+  if ((key.includes("бп") || key.includes("б покровская") || key.includes("большая покровская")) && key.includes("59")) {
     restaurant = "Б. Покровская, 59 Самурай";
-  } else if (key.includes("бп 63")) {
+  } else if ((key.includes("бп") || key.includes("б покровская") || key.includes("большая покровская")) && key.includes("63")) {
     restaurant = "Б. Покровская, 63 Самурай";
   } else if (key.includes("вп 14")) {
     restaurant = "Верхне-Печерская, 14Б Самурай";
@@ -337,7 +348,7 @@ function splitRevenueWarehouseName(name) {
     restaurant = "Октябрьская, 1 Vinedo";
   } else if (key.includes("белинского") && key.includes("61") && key.includes("достав")) {
     restaurant = "Белинского, 61 доставка Самурай";
-  } else if ((key.includes("белинского") && key.includes("61") && key.includes("ribs")) || /^RIBS\b/i.test(original)) {
+  } else if ((key.includes("белинского") && key.includes("61") && (key.includes("ribs") || key.includes("рибс"))) || /^RIBS\b/i.test(original)) {
     restaurant = "Белинского, 61 Ribs";
   } else if (key.includes("белинского") && key.includes("61")) {
     restaurant = "Белинского, 61 Самурай";
@@ -366,7 +377,7 @@ function splitRevenueWarehouseName(name) {
     restaurant = original.replace(/\s*\([^)]*\)\s*$/g, "").trim();
   }
 
-  return { restaurant: restaurant || original, warehouse: original };
+  return { restaurant: canonicalRestaurantName(restaurant || original), warehouse: original };
 }
 
 function revenueNameKey(value) {
