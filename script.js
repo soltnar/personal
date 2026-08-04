@@ -1,4 +1,4 @@
-const APP_VERSION = "2.0.3";
+const APP_VERSION = "2.1.0";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -274,20 +274,46 @@ function parseSabyDateTime(value) {
   return { dateIso: operationalDate, absSec: dayNumber * 86400 + timeSec };
 }
 
-function prepareSabyData(rows, from, to) {
+function parseSabyEmployeeDate(value) {
+  const match = String(value || "").match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : "";
+}
+
+function prepareSabyData(rows, from, to, employees = []) {
   const departmentSets = new Map();
   const departmentLabels = new Map();
+  const officialByPerson = new Map();
   const attendance = [];
+
+  employees.forEach((employee) => {
+    const personKey = normalizeFio(employee.person);
+    const hired = parseSabyEmployeeDate(employee.hired);
+    const fired = parseSabyEmployeeDate(employee.fired);
+    if (!personKey || (hired && hired > to) || (fired && fired < from)) return;
+    if (!officialByPerson.has(personKey)) officialByPerson.set(personKey, []);
+    officialByPerson.get(personKey).push(employee);
+
+    const department = canonicalRestaurantName(employee.department);
+    if (department && !isNonRestaurantDepartment(department)) {
+      if (!departmentSets.has(personKey)) departmentSets.set(personKey, new Set());
+      departmentSets.get(personKey).add(department);
+      departmentLabels.set(personKey, department);
+    }
+  });
 
   rows.forEach((row) => {
     const person = String(row.person || "").trim();
     const personKey = normalizeFio(person);
     const timing = parseSabyDateTime(row.dateTime);
-    const group = classifyRole(row.position);
-    const department = canonicalRestaurantName(row.department);
+    const official = officialByPerson.get(personKey) || [];
+    const officialRole = official.map((employee) => employee.position).find(classifyRole);
+    const group = classifyRole(officialRole || row.position);
+    const department = canonicalRestaurantName(official[0]?.department || row.department);
     if (!personKey || !timing || !group || timing.dateIso < from || timing.dateIso > to) return;
 
-    if (department && !isNonRestaurantDepartment(department)) {
+    // Internal report fields remain a fallback for employees that the official
+    // directory did not return for the selected employment period.
+    if (!official.length && department && !isNonRestaurantDepartment(department)) {
       if (!departmentSets.has(personKey)) departmentSets.set(personKey, new Set());
       departmentSets.get(personKey).add(department);
       departmentLabels.set(personKey, department);
@@ -366,14 +392,14 @@ async function loadSabyFromApi() {
     }
     if (!Array.isArray(payload.rows)) throw new Error("Saby вернул неизвестный формат данных");
 
-    const prepared = prepareSabyData(payload.rows, from, to);
+    const prepared = prepareSabyData(payload.rows, from, to, payload.employees);
     if (!prepared.attendance.length) throw new Error("За выбранный период не найдено событий проходной по учитываемым должностям");
     applyStaffData(prepared.staff);
     applyAttendanceData(prepared.attendance);
     lastResultRows = calculate(mappedRecords);
     renderTable(lastResultRows);
     setSabyApiStatus(
-      `Готово за ${Math.max(1, Math.round((payload.diagnostics?.elapsedMs || 0) / 1000))} сек.: получено ${payload.rows.length} событий, в расчёт вошло ${prepared.attendance.length}. Подразделений: ${prepared.staff.map.size}.`,
+      `Готово за ${Math.max(1, Math.round((payload.diagnostics?.elapsedMs || 0) / 1000))} сек.: ${payload.rows.length} событий проходной, ${payload.employees?.length || 0} сотрудников из официального API. В расчёт вошло ${prepared.attendance.length}.`,
       "success"
     );
     await loadRevenueFromDatabase({ silent: true });

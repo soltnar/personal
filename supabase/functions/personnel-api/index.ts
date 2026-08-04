@@ -10,6 +10,10 @@ const PAGE_SIZE = 1000;
 const MAX_PAGES = 40;
 const SABY_REQUEST_TIMEOUT_MS = 25_000;
 const SABY_REQUEST_ATTEMPTS = 2;
+const EMPLOYEE_PAGE_SIZE = 500;
+const EMPLOYEE_CACHE_MS = 10 * 60 * 1000;
+
+let employeeCache: { expiresAt: number; rows: Record<string, unknown>[] } | null = null;
 
 const cors = {
   "Access-Control-Allow-Origin": "https://soltnar.github.io",
@@ -117,9 +121,67 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-async function fetchAttendance(from: string, to: string) {
+async function fetchEmployees(token: string) {
+  if (employeeCache && employeeCache.expiresAt > Date.now()) return employeeCache.rows;
+
+  const employees: Record<string, unknown>[] = [];
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const response = await fetch("https://online.saby.ru/service/?srv=1", {
+      method: "POST",
+      signal: AbortSignal.timeout(SABY_REQUEST_TIMEOUT_MS),
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "X-SBISAccessToken": token,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "СБИС.СписокСотрудников",
+        params: {
+          "Параметр": {
+            "Фильтр": { "ВернутьУволенных": "Да" },
+            "Навигация": { "РазмерСтраницы": String(EMPLOYEE_PAGE_SIZE), "Страница": String(page) },
+          },
+        },
+        id: page + 1,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      throw new Error(`Saby не вернул официальный список сотрудников: ${data.error?.message || response.status}`);
+    }
+
+    const pageRows = Array.isArray(data.result?.["Сотрудник"])
+      ? data.result["Сотрудник"] as Record<string, unknown>[]
+      : [];
+    employees.push(...pageRows);
+    if (pageRows.length < EMPLOYEE_PAGE_SIZE || data.result?.["Навигация"]?.["ЕстьЕще"] !== "Да") break;
+    if (page === MAX_PAGES - 1) throw new Error("Превышен лимит страниц списка сотрудников");
+  }
+
+  const rows = employees.map((employee) => {
+    const position = employee["Должность"] && typeof employee["Должность"] === "object"
+      ? employee["Должность"] as Record<string, unknown>
+      : {};
+    const department = employee["Подразделение"] && typeof employee["Подразделение"] === "object"
+      ? employee["Подразделение"] as Record<string, unknown>
+      : {};
+    return {
+      person: [employee["Фамилия"], employee["Имя"], employee["Отчество"]]
+        .map(cleanText).filter(Boolean).join(" "),
+      position: cleanText(position["Название"]),
+      department: cleanText(department["Название"]),
+      hired: cleanText(employee["Принят"]),
+      fired: cleanText(employee["Уволен"]),
+    };
+  }).filter((employee) => employee.person);
+
+  employeeCache = { expiresAt: Date.now() + EMPLOYEE_CACHE_MS, rows };
+  console.log(JSON.stringify({ event: "official_employees_loaded", rows: rows.length }));
+  return rows;
+}
+
+async function fetchAttendance(from: string, to: string, token: string) {
   const startedAt = Date.now();
-  const token = await sabyToken();
   const rows: Record<string, unknown>[] = [];
   let pagesLoaded = 0;
 
@@ -205,13 +267,21 @@ Deno.serve(async (req) => {
     const from = url.searchParams.get("from") || "";
     const to = url.searchParams.get("to") || "";
     validatePeriod(from, to);
-    const attendance = await fetchAttendance(from, to);
+    const token = await sabyToken();
+    const employees = await fetchEmployees(token);
+    const attendance = await fetchAttendance(from, to, token);
     return json({
       from,
       to,
       generatedAt: new Date().toISOString(),
       rows: attendance.rows,
-      diagnostics: { pages: attendance.pagesLoaded, elapsedMs: attendance.elapsedMs },
+      employees,
+      diagnostics: {
+        pages: attendance.pagesLoaded,
+        elapsedMs: attendance.elapsedMs,
+        employees: employees.length,
+        employeeSource: "СБИС.СписокСотрудников",
+      },
     });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Ошибка сервера" }, 400);
