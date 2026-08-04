@@ -8,8 +8,8 @@ const SABY_SERVICE_KEY = Deno.env.get("SABY_SERVICE_KEY")!;
 const ALLOWED_EMAIL = "soltnar@gmail.com";
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 40;
-const PAGE_BATCH_SIZE = 4;
-const SABY_REQUEST_TIMEOUT_MS = 45_000;
+const SABY_REQUEST_TIMEOUT_MS = 25_000;
+const SABY_REQUEST_ATTEMPTS = 2;
 
 const cors = {
   "Access-Control-Allow-Origin": "https://soltnar.github.io",
@@ -124,39 +124,43 @@ async function fetchAttendance(from: string, to: string) {
   let pagesLoaded = 0;
 
   const fetchPage = async (page: number) => {
-    const response = await fetch("https://online.saby.ru/service/", {
-      method: "POST",
-      signal: AbortSignal.timeout(SABY_REQUEST_TIMEOUT_MS),
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "X-SBISAccessToken": token,
-        "X-CalledMethod": "ActivityFixation.GetPersonsMainEvents",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-      body: JSON.stringify(attendanceRequest(from, to, page)),
-    });
-    const data = await response.json();
-    if (!response.ok || data.error) {
-      throw new Error(`Saby не вернул проходную: ${data.error?.message || response.status}`);
+    for (let attempt = 1; attempt <= SABY_REQUEST_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetch("https://online.saby.ru/service/", {
+          method: "POST",
+          signal: AbortSignal.timeout(SABY_REQUEST_TIMEOUT_MS),
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "X-SBISAccessToken": token,
+            "X-CalledMethod": "ActivityFixation.GetPersonsMainEvents",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          body: JSON.stringify(attendanceRequest(from, to, page)),
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) {
+          throw new Error(`Saby не вернул проходную: ${data.error?.message || response.status}`);
+        }
+        return {
+          rows: rowsFromResult(data.result),
+          hasMore: data.result?.n !== false,
+        };
+      } catch (error) {
+        if (attempt === SABY_REQUEST_ATTEMPTS) throw error;
+        console.log(JSON.stringify({ event: "attendance_page_retry", page, attempt }));
+      }
     }
-    return {
-      rows: rowsFromResult(data.result),
-      hasMore: data.result?.n !== false,
-    };
+    throw new Error("Saby не вернул страницу проходной");
   };
 
-  for (let page = 0; page < MAX_PAGES; page += PAGE_BATCH_SIZE) {
-    const pageNumbers = Array.from(
-      { length: Math.min(PAGE_BATCH_SIZE, MAX_PAGES - page) },
-      (_, index) => page + index,
-    );
-    const batch = await Promise.all(pageNumbers.map(fetchPage));
-    pagesLoaded += batch.length;
-    batch.forEach((result) => rows.push(...result.rows));
-
-    const reachedEnd = batch.some((result) => result.rows.length < PAGE_SIZE || !result.hasMore);
-    if (reachedEnd) break;
-    if (page + PAGE_BATCH_SIZE >= MAX_PAGES) throw new Error("Превышен лимит страниц проходной");
+  // Saby throttles parallel report requests, so larger pages are faster and
+  // more reliable than concurrent pagination.
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const result = await fetchPage(page);
+    pagesLoaded += 1;
+    rows.push(...result.rows);
+    if (result.rows.length < PAGE_SIZE || !result.hasMore) break;
+    if (page === MAX_PAGES - 1) throw new Error("Превышен лимит страниц проходной");
   }
 
   const unique = new Map<string, Record<string, unknown>>();
