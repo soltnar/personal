@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8.5";
+const APP_VERSION = "1.8.6";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -90,7 +90,7 @@ function canonicalRestaurantName(value) {
   if ((key.includes("б покровская") || key.includes("большая покровская") || key.includes("бп")) && key.includes("59")) {
     return "Б. Покровская, 59 Самурай";
   }
-  if (key.includes("детский центр жюль верн") || (key.includes("ленина") && key.includes("64") && key.includes("ударник"))) {
+  if (key.includes("детский центр жюль верн") || key.includes("ударник") || key.includes("винедо") || key.includes("vinedo") || (key.includes("ленина") && key.includes("64"))) {
     return "Ленина, 64 Ударник";
   }
   return original;
@@ -345,12 +345,10 @@ function splitRevenueWarehouseName(name) {
     restaurant = "Циолковского, 19А Самурай";
   } else if (key.includes("геологов")) {
     restaurant = "Геологов 7А Самурай";
-  } else if ((key.includes("ленина") && key.includes("64")) || key.includes("ударник")) {
+  } else if ((key.includes("ленина") && key.includes("64")) || key.includes("ударник") || key.includes("винедо") || key.includes("vinedo")) {
     restaurant = "Ленина, 64 Ударник";
   } else if (key.includes("ошар") || key.includes("ресторан xix")) {
     restaurant = "Ошарская, 8А 19";
-  } else if (key.includes("винедо") || key.includes("vinedo")) {
-    restaurant = "Октябрьская, 1 Vinedo";
   } else if (key.includes("белинского") && key.includes("61") && key.includes("достав")) {
     restaurant = "Белинского, 61 доставка Самурай";
   } else if ((key.includes("белинского") && key.includes("61") && hasRibsMarker(original)) || /^RIBS\b/i.test(original) || hasRibsMarker(original)) {
