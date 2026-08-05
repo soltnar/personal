@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1.0";
+const APP_VERSION = "2.1.1";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -346,6 +346,59 @@ function prepareSabyData(rows, from, to, employees = []) {
   return { attendance, staff: { map, conflicts, conflictKeys } };
 }
 
+const SABY_CHUNK_DAYS = 10;
+const SABY_CHUNK_TIMEOUT_MS = 140000;
+
+function addDaysIso(dateIso, days) {
+  const [year, month, day] = dateIso.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+// Smaller sequential requests avoid Saby and Edge Function timeouts on long periods.
+function splitDateRangeIntoChunks(from, to, chunkDays = SABY_CHUNK_DAYS) {
+  const chunks = [];
+  let chunkFrom = from;
+  while (chunkFrom <= to) {
+    const chunkTo = addDaysIso(chunkFrom, chunkDays - 1);
+    chunks.push({ from: chunkFrom, to: chunkTo > to ? to : chunkTo });
+    chunkFrom = addDaysIso(chunkFrom, chunkDays);
+  }
+  return chunks;
+}
+
+async function fetchSabyChunk(from, to, accessToken) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SABY_CHUNK_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${PERSONNEL_API_URL}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        "Content-Type": "application/json"
+      }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = response.status === 546
+        ? "Saby не успел ответить (546)"
+        : (payload.error || `HTTP ${response.status}`);
+      throw new Error(message);
+    }
+    if (!Array.isArray(payload.rows)) throw new Error("Saby вернул неизвестный формат данных");
+    return payload;
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error(`сервер не ответил за ${Math.round(SABY_CHUNK_TIMEOUT_MS / 1000)} секунд`);
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function loadSabyFromApi() {
   if (sabyApiLoading || !supabaseClient) return;
   const from = sabyFromInput?.value || "";
@@ -367,45 +420,39 @@ async function loadSabyFromApi() {
   updateRevenueDbButtons();
   loadSabyBtn.classList.add("is-busy");
   loadSabyBtn.setAttribute("aria-busy", "true");
-  setSabyApiStatus(`Получаем проходную и подразделения за ${from} - ${to}…`, "loading");
+  const chunks = splitDateRangeIntoChunks(from, to);
+  const allRows = [];
+  let employees = [];
+  let totalElapsedMs = 0;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 140000);
-    const response = await fetch(`${PERSONNEL_API_URL}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
-      method: "GET",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${revenueDbSession.access_token}`,
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        "Content-Type": "application/json"
-      }
-    });
-    clearTimeout(timeoutId);
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message = response.status === 546
-        ? "Saby отвечает слишком долго, сервер прервал запрос"
-        : payload.error || `Ошибка ${response.status}`;
-      throw new Error(message);
+    for (let index = 0; index < chunks.length; index += 1) {
+      const chunk = chunks[index];
+      setSabyApiStatus(
+        chunks.length > 1
+          ? `Получаем проходную ${chunk.from} - ${chunk.to} (период ${index + 1} из ${chunks.length})…`
+          : `Получаем проходную и подразделения за ${chunk.from} - ${chunk.to}…`,
+        "loading"
+      );
+      const payload = await fetchSabyChunk(chunk.from, chunk.to, revenueDbSession.access_token);
+      allRows.push(...payload.rows);
+      if (Array.isArray(payload.employees) && payload.employees.length) employees = payload.employees;
+      totalElapsedMs += payload.diagnostics?.elapsedMs || 0;
     }
-    if (!Array.isArray(payload.rows)) throw new Error("Saby вернул неизвестный формат данных");
 
-    const prepared = prepareSabyData(payload.rows, from, to, payload.employees);
+    const prepared = prepareSabyData(allRows, from, to, employees);
     if (!prepared.attendance.length) throw new Error("За выбранный период не найдено событий проходной по учитываемым должностям");
     applyStaffData(prepared.staff);
     applyAttendanceData(prepared.attendance);
     lastResultRows = calculate(mappedRecords);
     renderTable(lastResultRows);
     setSabyApiStatus(
-      `Готово за ${Math.max(1, Math.round((payload.diagnostics?.elapsedMs || 0) / 1000))} сек.: ${payload.rows.length} событий проходной, ${payload.employees?.length || 0} сотрудников из официального API. В расчёт вошло ${prepared.attendance.length}.`,
+      `Готово за ${Math.max(1, Math.round(totalElapsedMs / 1000))} сек.: ${allRows.length} событий проходной, ${employees.length} сотрудников из официального API. В расчёт вошло ${prepared.attendance.length}.`,
       "success"
     );
     await loadRevenueFromDatabase({ silent: true });
   } catch (error) {
-    const message = error?.name === "AbortError" ? "сервер не ответил за 140 секунд" : error.message;
-    setSabyApiStatus(`Не удалось загрузить данные Saby: ${message || "неизвестная ошибка"}. Доступна резервная загрузка Excel.`, "error");
+    setSabyApiStatus(`Не удалось загрузить данные Saby: ${error?.message || "неизвестная ошибка"}. Доступна резервная загрузка Excel.`, "error");
   } finally {
     sabyApiLoading = false;
     loadSabyBtn.classList.remove("is-busy");
