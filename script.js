@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1.1";
+const APP_VERSION = "2.1.2";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -399,6 +399,32 @@ async function fetchSabyChunk(from, to, accessToken) {
   }
 }
 
+function isSabyTimeout(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return message.includes("signal timed out")
+    || message.includes("не успел")
+    || message.includes("сервер не ответил")
+    || message.includes("(546)");
+}
+
+// Retry a transient Saby timeout with smaller date ranges, down to one day.
+async function fetchSabyRangeWithFallback(from, to, accessToken, onSplit) {
+  try {
+    return [await fetchSabyChunk(from, to, accessToken)];
+  } catch (error) {
+    if (!isSabyTimeout(error) || from === to) throw error;
+    const fromDate = new Date(`${from}T12:00:00Z`);
+    const toDate = new Date(`${to}T12:00:00Z`);
+    const days = Math.round((toDate - fromDate) / 86400000) + 1;
+    const leftTo = addDaysIso(from, Math.floor(days / 2) - 1);
+    const rightFrom = addDaysIso(leftTo, 1);
+    onSplit?.(from, to, leftTo, rightFrom);
+    const left = await fetchSabyRangeWithFallback(from, leftTo, accessToken, onSplit);
+    const right = await fetchSabyRangeWithFallback(rightFrom, to, accessToken, onSplit);
+    return [...left, ...right];
+  }
+}
+
 async function loadSabyFromApi() {
   if (sabyApiLoading || !supabaseClient) return;
   const from = sabyFromInput?.value || "";
@@ -434,10 +460,20 @@ async function loadSabyFromApi() {
           : `Получаем проходную и подразделения за ${chunk.from} - ${chunk.to}…`,
         "loading"
       );
-      const payload = await fetchSabyChunk(chunk.from, chunk.to, revenueDbSession.access_token);
-      allRows.push(...payload.rows);
-      if (Array.isArray(payload.employees) && payload.employees.length) employees = payload.employees;
-      totalElapsedMs += payload.diagnostics?.elapsedMs || 0;
+      const payloads = await fetchSabyRangeWithFallback(
+        chunk.from,
+        chunk.to,
+        revenueDbSession.access_token,
+        (failedFrom, failedTo, leftTo, rightFrom) => setSabyApiStatus(
+          `Saby не успел ответить за ${failedFrom} - ${failedTo}. Повторяем частями: ${failedFrom} - ${leftTo} и ${rightFrom} - ${failedTo}…`,
+          "loading"
+        )
+      );
+      payloads.forEach((payload) => {
+        allRows.push(...payload.rows);
+        if (Array.isArray(payload.employees) && payload.employees.length) employees = payload.employees;
+        totalElapsedMs += payload.diagnostics?.elapsedMs || 0;
+      });
     }
 
     const prepared = prepareSabyData(allRows, from, to, employees);

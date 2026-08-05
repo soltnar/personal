@@ -126,29 +126,42 @@ async function fetchEmployees(token: string) {
 
   const employees: Record<string, unknown>[] = [];
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const response = await fetch("https://online.saby.ru/service/?srv=1", {
-      method: "POST",
-      signal: AbortSignal.timeout(SABY_REQUEST_TIMEOUT_MS),
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "X-SBISAccessToken": token,
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "СБИС.СписокСотрудников",
-        params: {
-          "Параметр": {
-            "Фильтр": { "ВернутьУволенных": "Да" },
-            "Навигация": { "РазмерСтраницы": String(EMPLOYEE_PAGE_SIZE), "Страница": String(page) },
+    let data: Record<string, unknown> | null = null;
+    for (let attempt = 1; attempt <= SABY_REQUEST_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetch("https://online.saby.ru/service/?srv=1", {
+          method: "POST",
+          signal: AbortSignal.timeout(SABY_REQUEST_TIMEOUT_MS),
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "X-SBISAccessToken": token,
           },
-        },
-        id: page + 1,
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok || data.error) {
-      throw new Error(`Saby не вернул официальный список сотрудников: ${data.error?.message || response.status}`);
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "СБИС.СписокСотрудников",
+            params: {
+              "Параметр": {
+                "Фильтр": { "ВернутьУволенных": "Да" },
+                "Навигация": { "РазмерСтраницы": String(EMPLOYEE_PAGE_SIZE), "Страница": String(page) },
+              },
+            },
+            id: page + 1,
+          }),
+        });
+        const candidate = await response.json();
+        if (!response.ok || candidate.error) {
+          throw new Error(candidate.error?.message || `HTTP ${response.status}`);
+        }
+        data = candidate;
+        break;
+      } catch (error) {
+        if (attempt === SABY_REQUEST_ATTEMPTS) {
+          throw new Error(`Saby не вернул официальный список сотрудников (страница ${page + 1}): ${error instanceof Error ? error.message : "неизвестная ошибка"}`);
+        }
+        console.log(JSON.stringify({ event: "employee_page_retry", page, attempt }));
+      }
     }
+    if (!data) throw new Error("Saby не вернул официальный список сотрудников");
 
     const pageRows = Array.isArray(data.result?.["Сотрудник"])
       ? data.result["Сотрудник"] as Record<string, unknown>[]
