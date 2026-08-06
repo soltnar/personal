@@ -10,7 +10,7 @@ const PAGE_SIZE = 1000;
 const MAX_PAGES = 40;
 const SABY_REQUEST_TIMEOUT_MS = 25_000;
 const SABY_REQUEST_ATTEMPTS = 2;
-const EMPLOYEE_PAGE_SIZE = 500;
+const EMPLOYEE_PAGE_SIZE = 100;
 const EMPLOYEE_CACHE_MS = 10 * 60 * 1000;
 
 let employeeCache: { expiresAt: number; rows: Record<string, unknown>[] } | null = null;
@@ -281,7 +281,19 @@ Deno.serve(async (req) => {
     const to = url.searchParams.get("to") || "";
     validatePeriod(from, to);
     const token = await sabyToken();
-    const employees = await fetchEmployees(token);
+    let employees: Record<string, unknown>[] = [];
+    let employeeError = "";
+    try {
+      employees = await fetchEmployees(token);
+    } catch (error) {
+      employeeError = error instanceof Error ? error.message : "Неизвестная ошибка списка сотрудников";
+      employees = employeeCache?.rows || [];
+      console.log(JSON.stringify({
+        event: "official_employees_fallback",
+        cachedRows: employees.length,
+        error: employeeError,
+      }));
+    }
     const attendance = await fetchAttendance(from, to, token);
     return json({
       from,
@@ -294,6 +306,7 @@ Deno.serve(async (req) => {
         elapsedMs: attendance.elapsedMs,
         employees: employees.length,
         employeeSource: "СБИС.СписокСотрудников",
+        employeeError,
       },
     });
   } catch (error) {

@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1.2";
+const APP_VERSION = "2.1.3";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -855,13 +855,14 @@ function getRevenueWarehouseKind(name) {
 }
 
 function getSelectedWarehouseTypes() {
-  const selected = document.querySelector('input[name="warehouseType"]:checked');
-  return selected ? [selected.value] : ["all"];
+  return [...document.querySelectorAll('input[name="warehouseType"]:checked')]
+    .map((input) => input.value);
 }
 
 function revenueMatchesWarehouseType(row) {
   const selectedTypes = getSelectedWarehouseTypes();
-  if (!selectedTypes.length || selectedTypes.includes("all")) return true;
+  if (selectedTypes.includes("all")) return true;
+  if (!selectedTypes.length) return false;
   return selectedTypes.includes(row.warehouseKind);
 }
 
@@ -1402,9 +1403,20 @@ if (loadSabyBtn) loadSabyBtn.addEventListener("click", loadSabyFromApi);
 if (sabyFromInput) sabyFromInput.addEventListener("change", updateRevenueDbButtons);
 if (sabyToInput) sabyToInput.addEventListener("change", updateRevenueDbButtons);
 
-warehouseTypeControl.addEventListener("change", () => {
+warehouseTypeControl.addEventListener("change", (event) => {
+  const changed = event.target.closest('input[name="warehouseType"]');
+  if (!changed) return;
+  const inputs = [...warehouseTypeControl.querySelectorAll('input[name="warehouseType"]')];
+  if (changed.value === "all" && changed.checked) {
+    inputs.forEach((input) => {
+      if (input !== changed) input.checked = false;
+    });
+  } else if (changed.value !== "all" && changed.checked) {
+    const allInput = inputs.find((input) => input.value === "all");
+    if (allInput) allInput.checked = false;
+  }
   if (!mappedRecords.length) return;
-  summaryEl.textContent = "Тип склада выручки изменен. Нажмите «Рассчитать».";
+  summaryEl.textContent = "Состав складов выручки изменен. Нажмите «Рассчитать».";
 });
 
 universalInput.addEventListener("change", async (e) => {
