@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1.4";
+const APP_VERSION = "2.2.0";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -346,8 +346,9 @@ function prepareSabyData(rows, from, to, employees = []) {
   return { attendance, staff: { map, conflicts, conflictKeys } };
 }
 
-const SABY_CHUNK_DAYS = 4;
-const SABY_CHUNK_TIMEOUT_MS = 140000;
+const SABY_CACHE_POLL_MS = 4000;
+const SABY_CACHE_WAIT_MS = 15 * 60 * 1000;
+const SABY_API_TIMEOUT_MS = 20000;
 
 function addDaysIso(dateIso, days) {
   const [year, month, day] = dateIso.split("-").map(Number);
@@ -356,21 +357,9 @@ function addDaysIso(dateIso, days) {
   return date.toISOString().slice(0, 10);
 }
 
-// Smaller sequential requests avoid Saby and Edge Function timeouts on long periods.
-function splitDateRangeIntoChunks(from, to, chunkDays = SABY_CHUNK_DAYS) {
-  const chunks = [];
-  let chunkFrom = from;
-  while (chunkFrom <= to) {
-    const chunkTo = addDaysIso(chunkFrom, chunkDays - 1);
-    chunks.push({ from: chunkFrom, to: chunkTo > to ? to : chunkTo });
-    chunkFrom = addDaysIso(chunkFrom, chunkDays);
-  }
-  return chunks;
-}
-
 async function fetchSabyChunk(from, to, accessToken) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), SABY_CHUNK_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), SABY_API_TIMEOUT_MS);
   try {
     const response = await fetch(`${PERSONNEL_API_URL}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
       method: "GET",
@@ -389,39 +378,13 @@ async function fetchSabyChunk(from, to, accessToken) {
         : (payload.error || `HTTP ${response.status}`);
       throw new Error(message);
     }
-    if (!Array.isArray(payload.rows)) throw new Error("Saby вернул неизвестный формат данных");
+    if (!Array.isArray(payload.rows)) throw new Error("Сервер вернул неизвестный формат данных");
     return payload;
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error(`сервер не ответил за ${Math.round(SABY_CHUNK_TIMEOUT_MS / 1000)} секунд`);
+    if (error?.name === "AbortError") throw new Error(`сервер кэша не ответил за ${Math.round(SABY_API_TIMEOUT_MS / 1000)} секунд`);
     throw error;
   } finally {
     clearTimeout(timeoutId);
-  }
-}
-
-function isSabyTimeout(error) {
-  const message = String(error?.message || error || "").toLowerCase();
-  return message.includes("signal timed out")
-    || message.includes("не успел")
-    || message.includes("сервер не ответил")
-    || message.includes("(546)");
-}
-
-// Retry a transient Saby timeout with smaller date ranges, down to one day.
-async function fetchSabyRangeWithFallback(from, to, accessToken, onSplit) {
-  try {
-    return [await fetchSabyChunk(from, to, accessToken)];
-  } catch (error) {
-    if (!isSabyTimeout(error) || from === to) throw error;
-    const fromDate = new Date(`${from}T12:00:00Z`);
-    const toDate = new Date(`${to}T12:00:00Z`);
-    const days = Math.round((toDate - fromDate) / 86400000) + 1;
-    const leftTo = addDaysIso(from, Math.floor(days / 2) - 1);
-    const rightFrom = addDaysIso(leftTo, 1);
-    onSplit?.(from, to, leftTo, rightFrom);
-    const left = await fetchSabyRangeWithFallback(from, leftTo, accessToken, onSplit);
-    const right = await fetchSabyRangeWithFallback(rightFrom, to, accessToken, onSplit);
-    return [...left, ...right];
   }
 }
 
@@ -446,35 +409,26 @@ async function loadSabyFromApi() {
   updateRevenueDbButtons();
   loadSabyBtn.classList.add("is-busy");
   loadSabyBtn.setAttribute("aria-busy", "true");
-  const chunks = splitDateRangeIntoChunks(from, to);
-  const allRows = [];
+  let allRows = [];
   let employees = [];
-  let totalElapsedMs = 0;
+  const startedAt = Date.now();
 
   try {
-    for (let index = 0; index < chunks.length; index += 1) {
-      const chunk = chunks[index];
-      setSabyApiStatus(
-        chunks.length > 1
-          ? `Получаем проходную ${chunk.from} - ${chunk.to} (период ${index + 1} из ${chunks.length})…`
-          : `Получаем проходную и подразделения за ${chunk.from} - ${chunk.to}…`,
-        "loading"
-      );
-      const payloads = await fetchSabyRangeWithFallback(
-        chunk.from,
-        chunk.to,
-        revenueDbSession.access_token,
-        (failedFrom, failedTo, leftTo, rightFrom) => setSabyApiStatus(
-          `Saby не успел ответить за ${failedFrom} - ${failedTo}. Повторяем частями: ${failedFrom} - ${leftTo} и ${rightFrom} - ${failedTo}…`,
-          "loading"
-        )
-      );
-      payloads.forEach((payload) => {
-        allRows.push(...payload.rows);
-        if (Array.isArray(payload.employees) && payload.employees.length) employees = payload.employees;
-        totalElapsedMs += payload.diagnostics?.elapsedMs || 0;
-      });
+    while (Date.now() - startedAt < SABY_CACHE_WAIT_MS) {
+      const payload = await fetchSabyChunk(from, to, revenueDbSession.access_token);
+      allRows = payload.rows;
+      if (Array.isArray(payload.employees) && payload.employees.length) employees = payload.employees;
+      const ready = payload.readyDates?.length || 0;
+      const total = ready + (payload.pendingDates?.length || 0);
+      if (payload.complete) break;
+      const currentDate = payload.diagnostics?.syncingDate || payload.pendingDates?.[0] || "следующая дата";
+      setSabyApiStatus(`Кэшируем проходную: готово ${ready} из ${total} дней. Сейчас загружается ${currentDate}…`, "loading");
+      await new Promise((resolve) => setTimeout(resolve, SABY_CACHE_POLL_MS));
     }
+
+    const finalPayload = await fetchSabyChunk(from, to, revenueDbSession.access_token);
+    allRows = finalPayload.rows;
+    if (!finalPayload.complete) throw new Error(`не успели заполнить ${finalPayload.pendingDates?.length || 0} дней; готовые даты сохранены`);
 
     const prepared = prepareSabyData(allRows, from, to, employees);
     if (!prepared.attendance.length) throw new Error("За выбранный период не найдено событий проходной по учитываемым должностям");
@@ -483,7 +437,7 @@ async function loadSabyFromApi() {
     lastResultRows = calculate(mappedRecords);
     renderTable(lastResultRows);
     setSabyApiStatus(
-      `Готово за ${Math.max(1, Math.round(totalElapsedMs / 1000))} сек.: ${allRows.length} событий проходной. Должности и подразделения взяты из проходной. В расчёт вошло ${prepared.attendance.length}.`,
+      `Готово за ${Math.max(1, Math.round((Date.now() - startedAt) / 1000))} сек.: ${allRows.length} событий проходной из дневного кэша. В расчёт вошло ${prepared.attendance.length}.`,
       "success"
     );
     await loadRevenueFromDatabase({ silent: true });

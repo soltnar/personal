@@ -10,6 +10,8 @@ const PAGE_SIZE = 1000;
 const MAX_PAGES = 40;
 const SABY_REQUEST_TIMEOUT_MS = 25_000;
 const SABY_REQUEST_ATTEMPTS = 2;
+const CACHE_TABLE = "attendance_daily_cache";
+const CACHE_STALE_MS = 5 * 60_000;
 
 const cors = {
   "Access-Control-Allow-Origin": "https://soltnar.github.io",
@@ -36,6 +38,46 @@ function nextDate(date: string) {
   const value = new Date(`${date}T12:00:00Z`);
   value.setUTCDate(value.getUTCDate() + 1);
   return value.toISOString().slice(0, 10);
+}
+
+function datesInRange(from: string, to: string) {
+  const dates: string[] = [];
+  for (let date = from; date <= to; date = nextDate(date)) dates.push(date);
+  return dates;
+}
+
+async function cacheRequest(path: string, init: RequestInit = {}) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${CACHE_TABLE}${path}`, {
+    ...init,
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation,resolution=merge-duplicates",
+      ...(init.headers || {}),
+    },
+  });
+  if (!response.ok) throw new Error(`Ошибка кэша проходной: ${response.status}`);
+  const text = await response.text();
+  return text ? JSON.parse(text) : [];
+}
+
+async function readCache(from: string, to: string) {
+  const query = `?select=work_date,status,rows,error,updated_at&work_date=gte.${from}&work_date=lte.${to}&order=work_date.asc`;
+  return await cacheRequest(query) as Array<{
+    work_date: string;
+    status: string;
+    rows: Record<string, unknown>[] | null;
+    error: string | null;
+    updated_at: string;
+  }>;
+}
+
+async function writeCache(workDate: string, values: Record<string, unknown>) {
+  return await cacheRequest("?on_conflict=work_date", {
+    method: "POST",
+    body: JSON.stringify({ work_date: workDate, ...values, updated_at: new Date().toISOString() }),
+  });
 }
 
 async function authorize(req: Request) {
@@ -195,6 +237,25 @@ async function fetchAttendance(from: string, to: string, token: string) {
   return { rows: [...unique.values()], pagesLoaded, elapsedMs: Date.now() - startedAt };
 }
 
+async function syncCacheDay(workDate: string) {
+  const startedAt = Date.now();
+  try {
+    const token = await sabyToken();
+    const attendance = await fetchAttendance(workDate, workDate, token);
+    await writeCache(workDate, {
+      status: "ready",
+      rows: attendance.rows,
+      error: null,
+      elapsed_ms: attendance.elapsedMs,
+    });
+    console.log(JSON.stringify({ event: "attendance_cache_ready", workDate, rows: attendance.rows.length, elapsedMs: Date.now() - startedAt }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Ошибка Saby";
+    await writeCache(workDate, { status: "error", rows: [], error: message, elapsed_ms: Date.now() - startedAt });
+    console.error(JSON.stringify({ event: "attendance_cache_error", workDate, error: message, elapsedMs: Date.now() - startedAt }));
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   if (req.method !== "GET") return json({ error: "Метод не поддерживается" }, 405);
@@ -204,17 +265,42 @@ Deno.serve(async (req) => {
     const from = url.searchParams.get("from") || "";
     const to = url.searchParams.get("to") || "";
     validatePeriod(from, to);
-    const token = await sabyToken();
-    const attendance = await fetchAttendance(from, to, token);
+    const requestedDates = datesInRange(from, to);
+    const cached = await readCache(from, to);
+    const byDate = new Map(cached.map((entry) => [entry.work_date, entry]));
+    const now = Date.now();
+    const activeLoading = cached.some((entry) => entry.status === "loading"
+      && now - new Date(entry.updated_at).getTime() < CACHE_STALE_MS);
+    const nextMissing = requestedDates.find((date) => {
+      const entry = byDate.get(date);
+      if (!entry || entry.status === "error") return true;
+      return entry.status === "loading" && now - new Date(entry.updated_at).getTime() >= CACHE_STALE_MS;
+    });
+
+    if (!activeLoading && nextMissing) {
+      await writeCache(nextMissing, { status: "loading", rows: [], error: null, elapsed_ms: null });
+      EdgeRuntime.waitUntil(syncCacheDay(nextMissing));
+    }
+
+    const rows = cached.filter((entry) => entry.status === "ready").flatMap((entry) => entry.rows || []);
+    const readyDates = cached.filter((entry) => entry.status === "ready").map((entry) => entry.work_date);
+    const pendingDates = requestedDates.filter((date) => !readyDates.includes(date));
+    const errors = cached.filter((entry) => entry.status === "error").map((entry) => ({ date: entry.work_date, error: entry.error }));
     return json({
       from,
       to,
       generatedAt: new Date().toISOString(),
-      rows: attendance.rows,
+      rows,
       employees: [],
+      complete: pendingDates.length === 0,
+      readyDates,
+      pendingDates,
+      errors,
       diagnostics: {
-        pages: attendance.pagesLoaded,
-        elapsedMs: attendance.elapsedMs,
+        cache: true,
+        cacheHits: readyDates.length,
+        cacheTotal: requestedDates.length,
+        syncingDate: !activeLoading ? nextMissing || null : null,
         employees: 0,
         employeeSource: "ActivityFixation.GetPersonsMainEvents",
       },
