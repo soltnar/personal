@@ -10,10 +10,6 @@ const PAGE_SIZE = 1000;
 const MAX_PAGES = 40;
 const SABY_REQUEST_TIMEOUT_MS = 25_000;
 const SABY_REQUEST_ATTEMPTS = 2;
-const EMPLOYEE_PAGE_SIZE = 100;
-const EMPLOYEE_CACHE_MS = 10 * 60 * 1000;
-
-let employeeCache: { expiresAt: number; rows: Record<string, unknown>[] } | null = null;
 
 const cors = {
   "Access-Control-Allow-Origin": "https://soltnar.github.io",
@@ -121,78 +117,6 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-async function fetchEmployees(token: string) {
-  if (employeeCache && employeeCache.expiresAt > Date.now()) return employeeCache.rows;
-
-  const employees: Record<string, unknown>[] = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    let data: Record<string, unknown> | null = null;
-    for (let attempt = 1; attempt <= SABY_REQUEST_ATTEMPTS; attempt += 1) {
-      try {
-        const response = await fetch("https://online.saby.ru/service/?srv=1", {
-          method: "POST",
-          signal: AbortSignal.timeout(SABY_REQUEST_TIMEOUT_MS),
-          headers: {
-            "Content-Type": "application/json; charset=utf-8",
-            "X-SBISAccessToken": token,
-          },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "СБИС.СписокСотрудников",
-            params: {
-              "Параметр": {
-                "Фильтр": { "ВернутьУволенных": "Да" },
-                "Навигация": { "РазмерСтраницы": String(EMPLOYEE_PAGE_SIZE), "Страница": String(page) },
-              },
-            },
-            id: page + 1,
-          }),
-        });
-        const candidate = await response.json();
-        if (!response.ok || candidate.error) {
-          throw new Error(candidate.error?.message || `HTTP ${response.status}`);
-        }
-        data = candidate;
-        break;
-      } catch (error) {
-        if (attempt === SABY_REQUEST_ATTEMPTS) {
-          throw new Error(`Saby не вернул официальный список сотрудников (страница ${page + 1}): ${error instanceof Error ? error.message : "неизвестная ошибка"}`);
-        }
-        console.log(JSON.stringify({ event: "employee_page_retry", page, attempt }));
-      }
-    }
-    if (!data) throw new Error("Saby не вернул официальный список сотрудников");
-
-    const pageRows = Array.isArray(data.result?.["Сотрудник"])
-      ? data.result["Сотрудник"] as Record<string, unknown>[]
-      : [];
-    employees.push(...pageRows);
-    if (pageRows.length < EMPLOYEE_PAGE_SIZE || data.result?.["Навигация"]?.["ЕстьЕще"] !== "Да") break;
-    if (page === MAX_PAGES - 1) throw new Error("Превышен лимит страниц списка сотрудников");
-  }
-
-  const rows = employees.map((employee) => {
-    const position = employee["Должность"] && typeof employee["Должность"] === "object"
-      ? employee["Должность"] as Record<string, unknown>
-      : {};
-    const department = employee["Подразделение"] && typeof employee["Подразделение"] === "object"
-      ? employee["Подразделение"] as Record<string, unknown>
-      : {};
-    return {
-      person: [employee["Фамилия"], employee["Имя"], employee["Отчество"]]
-        .map(cleanText).filter(Boolean).join(" "),
-      position: cleanText(position["Название"]),
-      department: cleanText(department["Название"]),
-      hired: cleanText(employee["Принят"]),
-      fired: cleanText(employee["Уволен"]),
-    };
-  }).filter((employee) => employee.person);
-
-  employeeCache = { expiresAt: Date.now() + EMPLOYEE_CACHE_MS, rows };
-  console.log(JSON.stringify({ event: "official_employees_loaded", rows: rows.length }));
-  return rows;
-}
-
 async function fetchAttendance(from: string, to: string, token: string) {
   const startedAt = Date.now();
   const rows: Record<string, unknown>[] = [];
@@ -281,32 +205,18 @@ Deno.serve(async (req) => {
     const to = url.searchParams.get("to") || "";
     validatePeriod(from, to);
     const token = await sabyToken();
-    let employees: Record<string, unknown>[] = [];
-    let employeeError = "";
-    try {
-      employees = await fetchEmployees(token);
-    } catch (error) {
-      employeeError = error instanceof Error ? error.message : "Неизвестная ошибка списка сотрудников";
-      employees = employeeCache?.rows || [];
-      console.log(JSON.stringify({
-        event: "official_employees_fallback",
-        cachedRows: employees.length,
-        error: employeeError,
-      }));
-    }
     const attendance = await fetchAttendance(from, to, token);
     return json({
       from,
       to,
       generatedAt: new Date().toISOString(),
       rows: attendance.rows,
-      employees,
+      employees: [],
       diagnostics: {
         pages: attendance.pagesLoaded,
         elapsedMs: attendance.elapsedMs,
-        employees: employees.length,
-        employeeSource: "СБИС.СписокСотрудников",
-        employeeError,
+        employees: 0,
+        employeeSource: "ActivityFixation.GetPersonsMainEvents",
       },
     });
   } catch (error) {

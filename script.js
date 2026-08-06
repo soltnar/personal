@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1.3";
+const APP_VERSION = "2.1.4";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -346,7 +346,7 @@ function prepareSabyData(rows, from, to, employees = []) {
   return { attendance, staff: { map, conflicts, conflictKeys } };
 }
 
-const SABY_CHUNK_DAYS = 10;
+const SABY_CHUNK_DAYS = 4;
 const SABY_CHUNK_TIMEOUT_MS = 140000;
 
 function addDaysIso(dateIso, days) {
@@ -483,7 +483,7 @@ async function loadSabyFromApi() {
     lastResultRows = calculate(mappedRecords);
     renderTable(lastResultRows);
     setSabyApiStatus(
-      `Готово за ${Math.max(1, Math.round(totalElapsedMs / 1000))} сек.: ${allRows.length} событий проходной, ${employees.length} сотрудников из официального API. В расчёт вошло ${prepared.attendance.length}.`,
+      `Готово за ${Math.max(1, Math.round(totalElapsedMs / 1000))} сек.: ${allRows.length} событий проходной. Должности и подразделения взяты из проходной. В расчёт вошло ${prepared.attendance.length}.`,
       "success"
     );
     await loadRevenueFromDatabase({ silent: true });
@@ -1078,7 +1078,7 @@ function rebuildMappedRecords(selectAllRestaurants = false) {
 
     return {
       ...r,
-      restaurant: mappedRestaurant || "Не определен в списке сотрудников",
+      restaurant: mappedRestaurant || "Подразделение не определено",
       hasConflict: staffConflictKeys.has(r.personKey)
     };
   });
@@ -1344,8 +1344,8 @@ function refreshStatus() {
 
   const staffLoaded = staffRestaurantMap.size > 0;
   const staffPart = staffLoaded
-    ? ` Список сотрудников: сопоставлено ${mappingStats.matched} из ${mappingStats.total} записей.${staffConflicts ? ` Конфликтов ФИО: ${staffConflicts}.` : ""}`
-    : " Список сотрудников не загружен, рестораны не будут определены.";
+    ? ` Рестораны по подразделениям: сопоставлено ${mappingStats.matched} из ${mappingStats.total} записей.${staffConflicts ? ` Конфликтов ФИО: ${staffConflicts}.` : ""}`
+    : " Подразделения ресторанов в проходной не найдены.";
   const revenuePart = revenueRows.length ? ` Выручек: ${revenueRows.length} строк.` : " Выручка не загружена.";
 
   statusEl.textContent = `Записей проходной: ${baseRecords.length}.${staffPart}${revenuePart}`;
