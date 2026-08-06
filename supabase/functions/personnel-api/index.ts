@@ -40,6 +40,12 @@ function nextDate(date: string) {
   return value.toISOString().slice(0, 10);
 }
 
+function addDays(date: string, days: number) {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 function datesInRange(from: string, to: string) {
   const dates: string[] = [];
   for (let date = from; date <= to; date = nextDate(date)) dates.push(date);
@@ -89,6 +95,18 @@ async function authorize(req: Request) {
   if (!response.ok) return false;
   const user = await response.json();
   return String(user.email || "").toLowerCase() === ALLOWED_EMAIL;
+}
+
+async function authorizeCron(req: Request) {
+  const key = req.headers.get("x-cron-key") || "";
+  if (!key) return false;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
+  const hash = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/attendance_sync_config?select=secret_hash&id=eq.1&secret_hash=eq.${hash}`, {
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+  });
+  const rows = response.ok ? await response.json() : [];
+  return Array.isArray(rows) && rows.length === 1;
 }
 
 async function sabyToken() {
@@ -242,6 +260,7 @@ async function syncCacheDay(workDate: string) {
   try {
     const token = await sabyToken();
     const attendance = await fetchAttendance(workDate, workDate, token);
+    if (!attendance.rows.length) throw new Error("Saby вернул пустой день; дата будет повторена");
     await writeCache(workDate, {
       status: "ready",
       rows: attendance.rows,
@@ -260,10 +279,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   if (req.method !== "GET") return json({ error: "Метод не поддерживается" }, 405);
   try {
-    if (!(await authorize(req))) return json({ error: "Доступ запрещён" }, 403);
     const url = new URL(req.url);
-    const from = url.searchParams.get("from") || "";
-    const to = url.searchParams.get("to") || "";
+    const cronRequest = url.searchParams.get("refresh") === "recent";
+    if (!(cronRequest ? await authorizeCron(req) : await authorize(req))) return json({ error: "Доступ запрещён" }, 403);
+    const todayMoscow = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const from = cronRequest ? addDays(todayMoscow, -5) : url.searchParams.get("from") || "";
+    const to = cronRequest ? addDays(todayMoscow, -1) : url.searchParams.get("to") || "";
     validatePeriod(from, to);
     const requestedDates = datesInRange(from, to);
     const cached = await readCache(from, to);
@@ -271,9 +292,11 @@ Deno.serve(async (req) => {
     const now = Date.now();
     const activeLoading = cached.some((entry) => entry.status === "loading"
       && now - new Date(entry.updated_at).getTime() < CACHE_STALE_MS);
+    const refreshCutoff = `${todayMoscow}T00:00:00Z`;
     const nextMissing = requestedDates.find((date) => {
       const entry = byDate.get(date);
       if (!entry || entry.status === "error") return true;
+      if (cronRequest && entry.status === "ready" && entry.updated_at < refreshCutoff) return true;
       return entry.status === "loading" && now - new Date(entry.updated_at).getTime() >= CACHE_STALE_MS;
     });
 
