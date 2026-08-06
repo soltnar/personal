@@ -280,11 +280,12 @@ Deno.serve(async (req) => {
   if (req.method !== "GET") return json({ error: "Метод не поддерживается" }, 405);
   try {
     const url = new URL(req.url);
-    const cronRequest = url.searchParams.get("refresh") === "recent";
+    const refreshMode = url.searchParams.get("refresh") || "";
+    const cronRequest = refreshMode === "recent" || refreshMode === "backfill";
     if (!(cronRequest ? await authorizeCron(req) : await authorize(req))) return json({ error: "Доступ запрещён" }, 403);
     const todayMoscow = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    const from = cronRequest ? addDays(todayMoscow, -5) : url.searchParams.get("from") || "";
-    const to = cronRequest ? addDays(todayMoscow, -1) : url.searchParams.get("to") || "";
+    const from = refreshMode === "recent" ? addDays(todayMoscow, -5) : url.searchParams.get("from") || "";
+    const to = refreshMode === "recent" ? addDays(todayMoscow, -1) : url.searchParams.get("to") || "";
     validatePeriod(from, to);
     const requestedDates = datesInRange(from, to);
     const cached = await readCache(from, to);
@@ -296,7 +297,7 @@ Deno.serve(async (req) => {
     const nextMissing = requestedDates.find((date) => {
       const entry = byDate.get(date);
       if (!entry || entry.status === "error") return true;
-      if (cronRequest && entry.status === "ready" && entry.updated_at < refreshCutoff) return true;
+      if (refreshMode === "recent" && entry.status === "ready" && entry.updated_at < refreshCutoff) return true;
       return entry.status === "loading" && now - new Date(entry.updated_at).getTime() >= CACHE_STALE_MS;
     });
 
