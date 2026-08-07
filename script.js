@@ -1,4 +1,4 @@
-const APP_VERSION = "2.2.1";
+const APP_VERSION = "2.2.2";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -349,6 +349,7 @@ function prepareSabyData(rows, from, to, employees = []) {
 const SABY_CACHE_POLL_MS = 4000;
 const SABY_CACHE_WAIT_MS = 15 * 60 * 1000;
 const SABY_API_TIMEOUT_MS = 20000;
+const SABY_EMPLOYEES_TIMEOUT_MS = 90000;
 
 function addDaysIso(dateIso, days) {
   const [year, month, day] = dateIso.split("-").map(Number);
@@ -388,6 +389,28 @@ async function fetchSabyChunk(from, to, accessToken) {
   }
 }
 
+async function fetchSabyEmployees(accessToken) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SABY_EMPLOYEES_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${PERSONNEL_API_URL}?resource=employees`, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        "Content-Type": "application/json"
+      }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    return Array.isArray(payload.employees) ? payload.employees : [];
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function loadSabyFromApi() {
   if (sabyApiLoading || !supabaseClient) return;
   const from = sabyFromInput?.value || "";
@@ -414,6 +437,9 @@ async function loadSabyFromApi() {
   const startedAt = Date.now();
 
   try {
+    // The official employee directory is independent from attendance. Load it
+    // in parallel so a slow directory page cannot delay or break cache polling.
+    const employeesPromise = fetchSabyEmployees(revenueDbSession.access_token).catch(() => []);
     while (Date.now() - startedAt < SABY_CACHE_WAIT_MS) {
       const payload = await fetchSabyChunk(from, to, revenueDbSession.access_token);
       allRows = payload.rows;
@@ -428,8 +454,11 @@ async function loadSabyFromApi() {
 
     const finalPayload = await fetchSabyChunk(from, to, revenueDbSession.access_token);
     allRows = finalPayload.rows;
-    if (Array.isArray(finalPayload.employees) && finalPayload.employees.length) employees = finalPayload.employees;
     if (!finalPayload.complete) throw new Error(`не успели заполнить ${finalPayload.pendingDates?.length || 0} дней; готовые даты сохранены`);
+    employees = await Promise.race([
+      employeesPromise,
+      new Promise((resolve) => setTimeout(() => resolve([]), 8000))
+    ]);
 
     const prepared = prepareSabyData(allRows, from, to, employees);
     if (!prepared.attendance.length) throw new Error("За выбранный период не найдено событий проходной по учитываемым должностям");

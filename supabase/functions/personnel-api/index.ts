@@ -10,9 +10,10 @@ const PAGE_SIZE = 1000;
 const MAX_PAGES = 40;
 const SABY_REQUEST_TIMEOUT_MS = 25_000;
 const SABY_REQUEST_ATTEMPTS = 2;
-const EMPLOYEE_PAGE_SIZE = 500;
+const EMPLOYEE_PAGE_SIZE = 100;
 const EMPLOYEE_CACHE_MS = 60 * 60 * 1000;
 const CACHE_FORMAT_VERSION = 2;
+const CACHE_BATCH_DAYS = 7;
 
 let employeeCache: { expiresAt: number; rows: Record<string, unknown>[] } | null = null;
 const CACHE_TABLE = "attendance_daily_cache";
@@ -322,27 +323,45 @@ async function fetchAttendance(from: string, to: string, token: string) {
   return { rows: [...unique.values()], pagesLoaded, elapsedMs: Date.now() - startedAt };
 }
 
-async function syncCacheDay(workDate: string) {
+async function syncCacheDates(workDates: string[]) {
   const startedAt = Date.now();
+  const firstDate = workDates[0];
+  const lastDate = workDates[workDates.length - 1];
   try {
     const token = await sabyToken();
-    // The operational day ends at 03:59 on the following calendar date.
-    const attendance = await fetchAttendance(workDate, nextDate(workDate), token);
-    const workDayRows = attendance.rows
-      .filter((row) => operationalDate(row.dateTime) === workDate)
-      .map((row) => ({ ...row, cacheVersion: CACHE_FORMAT_VERSION }));
-    if (!workDayRows.length) throw new Error("Saby вернул пустой рабочий день; дата будет повторена");
-    await writeCache(workDate, {
-      status: "ready",
-      rows: workDayRows,
-      error: null,
-      elapsed_ms: attendance.elapsedMs,
-    });
-    console.log(JSON.stringify({ event: "attendance_cache_ready", workDate, rows: workDayRows.length, elapsedMs: Date.now() - startedAt }));
+    // One report covers several operational days. This removes one Saby report
+    // startup per day while still storing independently reusable daily entries.
+    const attendance = await fetchAttendance(firstDate, lastDate, token);
+    for (const workDate of workDates) {
+      const workDayRows = attendance.rows
+        .filter((row) => operationalDate(row.dateTime) === workDate)
+        .map((row) => ({ ...row, cacheVersion: CACHE_FORMAT_VERSION }));
+      if (!workDayRows.length) {
+        await writeCache(workDate, {
+          status: "error",
+          rows: [],
+          error: "Saby вернул пустой рабочий день; дата будет повторена",
+          elapsed_ms: attendance.elapsedMs,
+        });
+        continue;
+      }
+      await writeCache(workDate, {
+        status: "ready",
+        rows: workDayRows,
+        error: null,
+        elapsed_ms: attendance.elapsedMs,
+      });
+    }
+    console.log(JSON.stringify({ event: "attendance_cache_batch_ready", from: firstDate, to: lastDate, days: workDates.length, rows: attendance.rows.length, elapsedMs: Date.now() - startedAt }));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Ошибка Saby";
-    await writeCache(workDate, { status: "error", rows: [], error: message, elapsed_ms: Date.now() - startedAt });
-    console.error(JSON.stringify({ event: "attendance_cache_error", workDate, error: message, elapsedMs: Date.now() - startedAt }));
+    await Promise.all(workDates.map((workDate) => writeCache(workDate, {
+      status: "error",
+      rows: [],
+      error: message,
+      elapsed_ms: Date.now() - startedAt,
+    })));
+    console.error(JSON.stringify({ event: "attendance_cache_batch_error", from: firstDate, to: lastDate, error: message, elapsedMs: Date.now() - startedAt }));
   }
 }
 
@@ -354,6 +373,10 @@ Deno.serve(async (req) => {
     const refreshMode = url.searchParams.get("refresh") || "";
     const cronRequest = refreshMode === "recent" || refreshMode === "backfill";
     if (!(cronRequest ? await authorizeCron(req) : await authorize(req))) return json({ error: "Доступ запрещён" }, 403);
+    if (!cronRequest && url.searchParams.get("resource") === "employees") {
+      const employees = await fetchEmployees(await sabyToken());
+      return json({ employees, generatedAt: new Date().toISOString() });
+    }
     const todayMoscow = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
     const from = refreshMode === "recent" ? addDays(todayMoscow, -5) : url.searchParams.get("from") || "";
     const to = refreshMode === "recent" ? addDays(todayMoscow, -1) : url.searchParams.get("to") || "";
@@ -379,31 +402,30 @@ Deno.serve(async (req) => {
       return entry.status === "loading" && now - new Date(entry.updated_at).getTime() >= CACHE_STALE_MS;
     });
 
+    let syncingDates: string[] = [];
     if (!activeLoading && nextMissing) {
-      await writeCache(nextMissing, { status: "loading", rows: [], error: null, elapsed_ms: null });
-      EdgeRuntime.waitUntil(syncCacheDay(nextMissing));
+      const firstIndex = requestedDates.indexOf(nextMissing);
+      for (let index = firstIndex; index < requestedDates.length && syncingDates.length < CACHE_BATCH_DAYS; index += 1) {
+        const date = requestedDates[index];
+        const entry = byDate.get(date);
+        if (entry && entry.status === "ready" && isCurrentCacheEntry(entry)
+          && !(refreshMode === "recent" && entry.updated_at < refreshCutoff)) break;
+        syncingDates.push(date);
+      }
+      await Promise.all(syncingDates.map((date) => writeCache(date, { status: "loading", rows: [], error: null, elapsed_ms: null })));
+      EdgeRuntime.waitUntil(syncCacheDates(syncingDates));
     }
 
     const rows = cached.filter(isCurrentCacheEntry).flatMap((entry) => entry.rows || []);
     const readyDates = cached.filter(isCurrentCacheEntry).map((entry) => entry.work_date);
     const pendingDates = requestedDates.filter((date) => !readyDates.includes(date));
     const errors = cached.filter((entry) => entry.status === "error").map((entry) => ({ date: entry.work_date, error: entry.error }));
-    let employees: Record<string, unknown>[] = [];
-    let employeeError: string | null = null;
-    if (pendingDates.length === 0) {
-      try {
-        employees = await fetchEmployees(await sabyToken());
-      } catch (error) {
-        employeeError = error instanceof Error ? error.message : "Ошибка списка сотрудников";
-        console.error(JSON.stringify({ event: "official_employees_error", error: employeeError }));
-      }
-    }
     return json({
       from,
       to,
       generatedAt: new Date().toISOString(),
       rows,
-      employees,
+      employees: [],
       complete: pendingDates.length === 0,
       readyDates,
       pendingDates,
@@ -412,10 +434,10 @@ Deno.serve(async (req) => {
         cache: true,
         cacheHits: readyDates.length,
         cacheTotal: requestedDates.length,
-        syncingDate: !activeLoading ? nextMissing || null : null,
-        employees: employees.length,
-        employeeSource: employees.length ? "СБИС.СписокСотрудников" : "ActivityFixation.GetPersonsMainEvents",
-        employeeError,
+        syncingDate: syncingDates[0] || null,
+        syncingDates,
+        employees: 0,
+        employeeSource: "separate-request",
       },
     });
   } catch (error) {
