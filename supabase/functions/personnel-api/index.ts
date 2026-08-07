@@ -12,7 +12,7 @@ const SABY_REQUEST_TIMEOUT_MS = 25_000;
 const SABY_REQUEST_ATTEMPTS = 2;
 const EMPLOYEE_PAGE_SIZE = 100;
 const EMPLOYEE_CACHE_MS = 60 * 60 * 1000;
-const CACHE_FORMAT_VERSION = 3;
+const CACHE_FORMAT_VERSION = 4;
 const CACHE_BATCH_DAYS = 7;
 
 let employeeCache: { expiresAt: number; rows: Record<string, unknown>[] } | null = null;
@@ -313,7 +313,8 @@ async function fetchAttendance(from: string, to: string, token: string) {
       actionType: Number(row.ActionType),
       person,
       position: cleanText(row.Position),
-      department: cleanText(row.DepartmentName) || cleanText(location.LocationName),
+      department: cleanText(row.DepartmentName) || [location.LocationName, location.Address, location.AccessPointName]
+        .map(cleanText).filter(Boolean).join(" "),
       address: cleanText(location.Address) || cleanText(row.Address),
       accessPoint: cleanText(location.AccessPointName),
     };

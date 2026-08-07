@@ -1,4 +1,4 @@
-const APP_VERSION = "2.2.4";
+const APP_VERSION = "2.2.5";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -111,6 +111,52 @@ function canonicalRestaurantName(value) {
   const original = String(value || "").trim();
   const key = revenueNameKey(original);
   if (!key) return "";
+  if (key.includes("жюль верн") || key.includes("жюльверн") || key.includes("ударник")
+    || (key.includes("ленина") && key.includes("64"))) {
+    return "Ленина, 64 Ударник";
+  }
+  if (key.includes("октября") && key.includes("2")) {
+    return "Октября, 2 Самурай";
+  }
+  if ((key.includes("б покровская") || key.includes("большая покровская") || key.includes("бп")) && key.includes("59")) {
+    return "Б. Покровская, 59 Самурай";
+  }
+  if ((key.includes("б покровская") || key.includes("большая покровская") || key.includes("бп")) && key.includes("63")) {
+    return "Б. Покровская, 63 Самурай";
+  }
+  if ((key.includes("верхнепечер") || key.includes("верхне печер") || key.includes("вп")) && key.includes("14")) {
+    return "Верхне-Печерская, 14Б Самурай";
+  }
+  if (key.includes("циолковского") && key.includes("19")) {
+    return "Циолковского, 19А Самурай";
+  }
+  if (key.includes("геологов") && key.includes("7")) {
+    return "Геологов 7А Самурай";
+  }
+  if (key.includes("ошар") || key.includes("ресторан 19") || key.includes("ресторан xix")) {
+    return "Ошарская, 8А 19";
+  }
+  if ((key.includes("гагарина") && key.includes("35")) || key.includes("парк швейцария")) {
+    return "Парк Швейцария Самурай";
+  }
+  if (key.includes("моторн") && (key.includes("2к1") || key.includes("2 1"))) {
+    return "Моторный, 2/1 доставка Самурай";
+  }
+  if (key.includes("коминтерн") && key.includes("166")) {
+    return "Коминтерна 166 CALL CENTRE";
+  }
+  if (key.includes("коминтерн") && key.includes("115")) {
+    return "Коминтерна, 115 Самурай";
+  }
+  if (key.includes("волжская") && key.includes("13")) {
+    return "Волжская, 13 Самурай";
+  }
+  if (key.includes("веденяпина") && key.includes("1а")) {
+    return "Веденяпина, 1А Самурай";
+  }
+  if (key.includes("ленина") && key.includes("36")) {
+    return "Ленина, 36 Самурай";
+  }
   if (key.includes("белинского") && key.includes("61") && hasRibsMarker(original)) {
     return "Белинского, 61 Рибс";
   }
@@ -126,8 +172,8 @@ function canonicalRestaurantName(value) {
   if (key.includes("винедо") || key.includes("vinedo")) {
     return "Октябрьская, 1 Винедо";
   }
-  if (key.includes("детский центр жюль верн") || key.includes("ударник") || (key.includes("ленина") && key.includes("64"))) {
-    return "Ленина, 64 Ударник";
+  if (key.includes("белинского") && key.includes("61") && !key.includes("фабрик")) {
+    return "Белинского, 61 Самурай";
   }
   return original;
 }
@@ -136,6 +182,8 @@ function isNonRestaurantDepartment(value) {
   const key = revenueNameKey(value);
   return !key
     || key === "не определен в списке сотрудников"
+    || key === "подразделение не определено"
+    || key === "основной зал"
     || key === "технический персонал"
     || key.includes("сотрудники сторонних организаций")
     || key.includes("сдача отчетности");
@@ -308,7 +356,11 @@ function prepareSabyData(rows, from, to, employees = []) {
     const official = officialByPerson.get(personKey) || [];
     const officialRole = official.map((employee) => employee.position).find(classifyRole);
     const group = classifyRole(officialRole || row.position);
-    const department = canonicalRestaurantName(official[0]?.department || row.department);
+    const officialDepartment = canonicalRestaurantName(official[0]?.department);
+    const gateDepartment = canonicalRestaurantName(row.department);
+    const department = officialDepartment && !isNonRestaurantDepartment(officialDepartment)
+      ? officialDepartment
+      : gateDepartment;
     if (!personKey || !timing || !group || timing.dateIso < from || timing.dateIso > to) return;
 
     // Internal report fields remain a fallback for employees that the official
