@@ -1,4 +1,4 @@
-const APP_VERSION = "2.2.0";
+const APP_VERSION = "2.2.1";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -428,6 +428,7 @@ async function loadSabyFromApi() {
 
     const finalPayload = await fetchSabyChunk(from, to, revenueDbSession.access_token);
     allRows = finalPayload.rows;
+    if (Array.isArray(finalPayload.employees) && finalPayload.employees.length) employees = finalPayload.employees;
     if (!finalPayload.complete) throw new Error(`не успели заполнить ${finalPayload.pendingDates?.length || 0} дней; готовые даты сохранены`);
 
     const prepared = prepareSabyData(allRows, from, to, employees);
@@ -437,7 +438,7 @@ async function loadSabyFromApi() {
     lastResultRows = calculate(mappedRecords);
     renderTable(lastResultRows);
     setSabyApiStatus(
-      `Готово за ${Math.max(1, Math.round((Date.now() - startedAt) / 1000))} сек.: ${allRows.length} событий проходной из дневного кэша. В расчёт вошло ${prepared.attendance.length}.`,
+      `Готово за ${Math.max(1, Math.round((Date.now() - startedAt) / 1000))} сек.: ${allRows.length} событий проходной, ${employees.length} сотрудников. В расчёт вошло ${prepared.attendance.length}.`,
       "success"
     );
     await loadRevenueFromDatabase({ silent: true });

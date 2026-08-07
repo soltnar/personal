@@ -10,6 +10,11 @@ const PAGE_SIZE = 1000;
 const MAX_PAGES = 40;
 const SABY_REQUEST_TIMEOUT_MS = 25_000;
 const SABY_REQUEST_ATTEMPTS = 2;
+const EMPLOYEE_PAGE_SIZE = 500;
+const EMPLOYEE_CACHE_MS = 60 * 60 * 1000;
+const CACHE_FORMAT_VERSION = 2;
+
+let employeeCache: { expiresAt: number; rows: Record<string, unknown>[] } | null = null;
 const CACHE_TABLE = "attendance_daily_cache";
 const CACHE_STALE_MS = 5 * 60_000;
 
@@ -177,6 +182,68 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function operationalDate(value: unknown) {
+  const match = cleanText(value).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (!match) return "";
+  const [, year, month, day, hour] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (Number(hour) < 4) date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+async function fetchEmployees(token: string) {
+  if (employeeCache && employeeCache.expiresAt > Date.now()) return employeeCache.rows;
+
+  const employees: Record<string, unknown>[] = [];
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const response = await fetch("https://online.saby.ru/service/?srv=1", {
+      method: "POST",
+      signal: AbortSignal.timeout(SABY_REQUEST_TIMEOUT_MS),
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "X-SBISAccessToken": token,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "СБИС.СписокСотрудников",
+        params: {
+          "Параметр": {
+            "Фильтр": { "ВернутьУволенных": "Да" },
+            "Навигация": { "РазмерСтраницы": String(EMPLOYEE_PAGE_SIZE), "Страница": String(page) },
+          },
+        },
+        id: page + 1,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      throw new Error(`Saby не вернул список сотрудников: ${data.error?.message || response.status}`);
+    }
+    const pageRows = Array.isArray(data.result?.["Сотрудник"])
+      ? data.result["Сотрудник"] as Record<string, unknown>[]
+      : [];
+    employees.push(...pageRows);
+    if (pageRows.length < EMPLOYEE_PAGE_SIZE || data.result?.["Навигация"]?.["ЕстьЕще"] !== "Да") break;
+  }
+
+  const rows = employees.map((employee) => {
+    const position = employee["Должность"] && typeof employee["Должность"] === "object"
+      ? employee["Должность"] as Record<string, unknown> : {};
+    const department = employee["Подразделение"] && typeof employee["Подразделение"] === "object"
+      ? employee["Подразделение"] as Record<string, unknown> : {};
+    return {
+      person: [employee["Фамилия"], employee["Имя"], employee["Отчество"]].map(cleanText).filter(Boolean).join(" "),
+      position: cleanText(position["Название"]),
+      department: cleanText(department["Название"]),
+      hired: cleanText(employee["Принят"]),
+      fired: cleanText(employee["Уволен"]),
+    };
+  }).filter((employee) => employee.person);
+  employeeCache = { expiresAt: Date.now() + EMPLOYEE_CACHE_MS, rows };
+  console.log(JSON.stringify({ event: "official_employees_loaded", rows: rows.length }));
+  return rows;
+}
+
 async function fetchAttendance(from: string, to: string, token: string) {
   const startedAt = Date.now();
   const rows: Record<string, unknown>[] = [];
@@ -259,15 +326,19 @@ async function syncCacheDay(workDate: string) {
   const startedAt = Date.now();
   try {
     const token = await sabyToken();
-    const attendance = await fetchAttendance(workDate, workDate, token);
-    if (!attendance.rows.length) throw new Error("Saby вернул пустой день; дата будет повторена");
+    // The operational day ends at 03:59 on the following calendar date.
+    const attendance = await fetchAttendance(workDate, nextDate(workDate), token);
+    const workDayRows = attendance.rows
+      .filter((row) => operationalDate(row.dateTime) === workDate)
+      .map((row) => ({ ...row, cacheVersion: CACHE_FORMAT_VERSION }));
+    if (!workDayRows.length) throw new Error("Saby вернул пустой рабочий день; дата будет повторена");
     await writeCache(workDate, {
       status: "ready",
-      rows: attendance.rows,
+      rows: workDayRows,
       error: null,
       elapsed_ms: attendance.elapsedMs,
     });
-    console.log(JSON.stringify({ event: "attendance_cache_ready", workDate, rows: attendance.rows.length, elapsedMs: Date.now() - startedAt }));
+    console.log(JSON.stringify({ event: "attendance_cache_ready", workDate, rows: workDayRows.length, elapsedMs: Date.now() - startedAt }));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Ошибка Saby";
     await writeCache(workDate, { status: "error", rows: [], error: message, elapsed_ms: Date.now() - startedAt });
@@ -294,9 +365,16 @@ Deno.serve(async (req) => {
     const activeLoading = cached.some((entry) => entry.status === "loading"
       && now - new Date(entry.updated_at).getTime() < CACHE_STALE_MS);
     const refreshCutoff = `${todayMoscow}T00:00:00Z`;
+    const isCurrentCacheEntry = (entry: typeof cached[number] | undefined) => Boolean(
+      entry?.status === "ready"
+      && Array.isArray(entry.rows)
+      && entry.rows.length > 0
+      && entry.rows.every((row) => Number(row.cacheVersion) === CACHE_FORMAT_VERSION)
+    );
     const nextMissing = requestedDates.find((date) => {
       const entry = byDate.get(date);
       if (!entry || entry.status === "error") return true;
+      if (entry.status === "ready" && !isCurrentCacheEntry(entry)) return true;
       if (refreshMode === "recent" && entry.status === "ready" && entry.updated_at < refreshCutoff) return true;
       return entry.status === "loading" && now - new Date(entry.updated_at).getTime() >= CACHE_STALE_MS;
     });
@@ -306,16 +384,26 @@ Deno.serve(async (req) => {
       EdgeRuntime.waitUntil(syncCacheDay(nextMissing));
     }
 
-    const rows = cached.filter((entry) => entry.status === "ready").flatMap((entry) => entry.rows || []);
-    const readyDates = cached.filter((entry) => entry.status === "ready").map((entry) => entry.work_date);
+    const rows = cached.filter(isCurrentCacheEntry).flatMap((entry) => entry.rows || []);
+    const readyDates = cached.filter(isCurrentCacheEntry).map((entry) => entry.work_date);
     const pendingDates = requestedDates.filter((date) => !readyDates.includes(date));
     const errors = cached.filter((entry) => entry.status === "error").map((entry) => ({ date: entry.work_date, error: entry.error }));
+    let employees: Record<string, unknown>[] = [];
+    let employeeError: string | null = null;
+    if (pendingDates.length === 0) {
+      try {
+        employees = await fetchEmployees(await sabyToken());
+      } catch (error) {
+        employeeError = error instanceof Error ? error.message : "Ошибка списка сотрудников";
+        console.error(JSON.stringify({ event: "official_employees_error", error: employeeError }));
+      }
+    }
     return json({
       from,
       to,
       generatedAt: new Date().toISOString(),
       rows,
-      employees: [],
+      employees,
       complete: pendingDates.length === 0,
       readyDates,
       pendingDates,
@@ -325,8 +413,9 @@ Deno.serve(async (req) => {
         cacheHits: readyDates.length,
         cacheTotal: requestedDates.length,
         syncingDate: !activeLoading ? nextMissing || null : null,
-        employees: 0,
-        employeeSource: "ActivityFixation.GetPersonsMainEvents",
+        employees: employees.length,
+        employeeSource: employees.length ? "СБИС.СписокСотрудников" : "ActivityFixation.GetPersonsMainEvents",
+        employeeError,
       },
     });
   } catch (error) {
