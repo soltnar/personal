@@ -1,4 +1,4 @@
-const APP_VERSION = "2.2.5";
+const APP_VERSION = "2.2.6";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -185,6 +185,7 @@ function isNonRestaurantDepartment(value) {
     || key === "подразделение не определено"
     || key === "основной зал"
     || key === "технический персонал"
+    || key.includes("фабрика")
     || key.includes("сотрудники сторонних организаций")
     || key.includes("сдача отчетности");
 }
