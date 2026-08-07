@@ -1,4 +1,4 @@
-const APP_VERSION = "2.2.2";
+const APP_VERSION = "2.2.3";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -463,14 +463,14 @@ async function loadSabyFromApi() {
     const prepared = prepareSabyData(allRows, from, to, employees);
     if (!prepared.attendance.length) throw new Error("За выбранный период не найдено событий проходной по учитываемым должностям");
     applyStaffData(prepared.staff);
-    applyAttendanceData(prepared.attendance);
+    applyAttendanceData(prepared.attendance, { selectAllDates: true, skipAutoRevenue: true });
     lastResultRows = calculate(mappedRecords);
     renderTable(lastResultRows);
     setSabyApiStatus(
       `Готово за ${Math.max(1, Math.round((Date.now() - startedAt) / 1000))} сек.: ${allRows.length} событий проходной, ${employees.length} сотрудников. В расчёт вошло ${prepared.attendance.length}.`,
       "success"
     );
-    await loadRevenueFromDatabase({ silent: true });
+    await loadRevenueFromDatabase({ silent: true, range: { from, to } });
   } catch (error) {
     setSabyApiStatus(`Не удалось загрузить данные Saby: ${error?.message || "неизвестная ошибка"}. Доступна резервная загрузка Excel.`, "error");
   } finally {
@@ -487,7 +487,7 @@ async function loadRevenueFromDatabase(options = {}) {
     setRevenueDbStatus("База выручки пока недоступна. Используйте Excel-файл выручек.", "error");
     return;
   }
-  const range = getRevenueDbDateRange();
+  const range = options.range || getRevenueDbDateRange();
   if (!range) {
     setRevenueDbStatus("Сначала загрузите проходную, чтобы появились даты для запроса выручки.", "");
     updateRevenueDbButtons();
@@ -1005,16 +1005,19 @@ function applyStaffData(staffData) {
   refreshStatus();
 }
 
-function applyAttendanceData(records) {
+function applyAttendanceData(records, options = {}) {
   baseRecords = records;
   rebuildMappedRecords();
+  if (options.selectAllDates) {
+    Array.from(dateSelect.options).forEach((option) => { option.selected = true; });
+  }
   lastResultRows = [];
   tableBody.innerHTML = "";
   summaryEl.textContent = "Выберите фильтры и нажмите «Рассчитать».";
   csvBtn.disabled = true;
   xlsxBtn.disabled = true;
   refreshStatus();
-  maybeAutoLoadRevenueFromDatabase();
+  if (!options.skipAutoRevenue) maybeAutoLoadRevenueFromDatabase();
 }
 
 function applyRevenueData(rows) {
