@@ -1,4 +1,4 @@
-const APP_VERSION = "2.2.3";
+const APP_VERSION = "2.2.4";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -457,7 +457,7 @@ async function loadSabyFromApi() {
     if (!finalPayload.complete) throw new Error(`не успели заполнить ${finalPayload.pendingDates?.length || 0} дней; готовые даты сохранены`);
     employees = await Promise.race([
       employeesPromise,
-      new Promise((resolve) => setTimeout(() => resolve([]), 8000))
+      new Promise((resolve) => setTimeout(() => resolve([]), 60000))
     ]);
 
     const prepared = prepareSabyData(allRows, from, to, employees);

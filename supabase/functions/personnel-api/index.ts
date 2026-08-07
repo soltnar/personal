@@ -12,7 +12,7 @@ const SABY_REQUEST_TIMEOUT_MS = 25_000;
 const SABY_REQUEST_ATTEMPTS = 2;
 const EMPLOYEE_PAGE_SIZE = 100;
 const EMPLOYEE_CACHE_MS = 60 * 60 * 1000;
-const CACHE_FORMAT_VERSION = 2;
+const CACHE_FORMAT_VERSION = 3;
 const CACHE_BATCH_DAYS = 7;
 
 let employeeCache: { expiresAt: number; rows: Record<string, unknown>[] } | null = null;
@@ -197,34 +197,44 @@ async function fetchEmployees(token: string) {
 
   const employees: Record<string, unknown>[] = [];
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const response = await fetch("https://online.saby.ru/service/?srv=1", {
-      method: "POST",
-      signal: AbortSignal.timeout(SABY_REQUEST_TIMEOUT_MS),
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "X-SBISAccessToken": token,
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "СБИС.СписокСотрудников",
-        params: {
-          "Параметр": {
-            "Фильтр": { "ВернутьУволенных": "Да" },
-            "Навигация": { "РазмерСтраницы": String(EMPLOYEE_PAGE_SIZE), "Страница": String(page) },
+    let data: Record<string, any> | null = null;
+    for (let attempt = 1; attempt <= SABY_REQUEST_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetch("https://online.saby.ru/service/?srv=1", {
+          method: "POST",
+          signal: AbortSignal.timeout(SABY_REQUEST_TIMEOUT_MS),
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "X-SBISAccessToken": token,
           },
-        },
-        id: page + 1,
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok || data.error) {
-      throw new Error(`Saby не вернул список сотрудников: ${data.error?.message || response.status}`);
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "СБИС.СписокСотрудников",
+            params: {
+              "Параметр": {
+                "Фильтр": { "ВернутьУволенных": "Да" },
+                "Навигация": { "РазмерСтраницы": String(EMPLOYEE_PAGE_SIZE), "Страница": String(page) },
+              },
+            },
+            id: page + 1,
+          }),
+        });
+        data = await response.json();
+        if (!response.ok || data?.error) {
+          throw new Error(`Saby не вернул список сотрудников: ${data?.error?.message || response.status}`);
+        }
+        break;
+      } catch (error) {
+        if (attempt === SABY_REQUEST_ATTEMPTS) throw error;
+        console.log(JSON.stringify({ event: "official_employees_page_retry", page, attempt }));
+      }
     }
-    const pageRows = Array.isArray(data.result?.["Сотрудник"])
-      ? data.result["Сотрудник"] as Record<string, unknown>[]
+    const employeeData = data || {};
+    const pageRows = Array.isArray(employeeData.result?.["Сотрудник"])
+      ? employeeData.result["Сотрудник"] as Record<string, unknown>[]
       : [];
     employees.push(...pageRows);
-    if (pageRows.length < EMPLOYEE_PAGE_SIZE || data.result?.["Навигация"]?.["ЕстьЕще"] !== "Да") break;
+    if (pageRows.length < EMPLOYEE_PAGE_SIZE || employeeData.result?.["Навигация"]?.["ЕстьЕще"] !== "Да") break;
   }
 
   const rows = employees.map((employee) => {
@@ -303,7 +313,7 @@ async function fetchAttendance(from: string, to: string, token: string) {
       actionType: Number(row.ActionType),
       person,
       position: cleanText(row.Position),
-      department: cleanText(row.DepartmentName),
+      department: cleanText(row.DepartmentName) || cleanText(location.LocationName),
       address: cleanText(location.Address) || cleanText(row.Address),
       accessPoint: cleanText(location.AccessPointName),
     };
