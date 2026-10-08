@@ -1,4 +1,4 @@
-const APP_VERSION = "2.2.6";
+const APP_VERSION = "3.0.0";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -617,6 +617,36 @@ function fillMultiSelect(selectEl, values, selectedValues = []) {
     opt.selected = selectedSet.has(v);
     selectEl.appendChild(opt);
   });
+  if (selectEl === restaurantSelect) renderRestaurantChecklist();
+}
+
+function renderRestaurantChecklist() {
+  const container = document.getElementById("restaurantChecklist");
+  if (!container) return;
+  const query = normalize(document.getElementById("restaurantSearch").value);
+  container.replaceChildren();
+  const options = Array.from(restaurantSelect.options).filter((option) => !option.disabled);
+  options.filter((option) => normalize(option.value).includes(query)).forEach((option) => {
+    const label = document.createElement("label");
+    label.className = "restaurantChoice";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = option.selected;
+    input.addEventListener("change", () => {
+      option.selected = input.checked;
+      updateRestaurantCount();
+    });
+    label.append(input, document.createTextNode(option.value));
+    container.append(label);
+  });
+  updateRestaurantCount();
+}
+
+function updateRestaurantCount() {
+  const options = Array.from(restaurantSelect.options).filter((option) => !option.disabled);
+  document.getElementById("restaurantCount").textContent = options.length
+    ? `Выбрано ${options.filter((option) => option.selected).length} из ${options.length} предприятий`
+    : "Предприятия появятся после загрузки";
 }
 
 function findHeaderIndex(header, candidates) {
@@ -1265,6 +1295,10 @@ function buildDetailsHtml(row) {
 }
 
 function renderTable(rows) {
+  document.getElementById("metricShifts").textContent = rows.length ? formatShift(rows.reduce((sum, row) => sum + row.total, 0)) : "—";
+  document.getElementById("metricRevenue").textContent = rows.length ? `${formatMoney(rows.reduce((sum, row) => sum + row.revenue, 0))} ₽` : "—";
+  document.getElementById("metricRestaurants").textContent = rows.length ? new Set(rows.map((row) => row.restaurant)).size : "—";
+  document.getElementById("metricDays").textContent = rows.length ? new Set(rows.map((row) => row.dateIso)).size : "—";
   tableBody.innerHTML = "";
 
   if (!rows.length) {
@@ -1442,6 +1476,28 @@ if (loadRevenueDbBtn) loadRevenueDbBtn.addEventListener("click", () => loadReven
 if (loadSabyBtn) loadSabyBtn.addEventListener("click", loadSabyFromApi);
 if (sabyFromInput) sabyFromInput.addEventListener("change", updateRevenueDbButtons);
 if (sabyToInput) sabyToInput.addEventListener("change", updateRevenueDbButtons);
+document.getElementById("restaurantSearch").addEventListener("input", renderRestaurantChecklist);
+for (const [id, selected] of [["selectAllRestaurants", true], ["clearRestaurants", false]]) {
+  document.getElementById(id).addEventListener("click", () => {
+    Array.from(restaurantSelect.options).forEach((option) => { if (!option.disabled) option.selected = selected; });
+    renderRestaurantChecklist();
+  });
+}
+document.querySelectorAll("[data-period]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const end = new Date();
+    const start = new Date(end);
+    if (button.dataset.period === "week") start.setDate(start.getDate() - 6);
+    if (button.dataset.period === "month") start.setDate(1);
+    if (button.dataset.period === "previous") {
+      end.setDate(0);
+      start.setFullYear(end.getFullYear(), end.getMonth(), 1);
+    }
+    sabyFromInput.value = isoLocalDate(start);
+    sabyToInput.value = isoLocalDate(end);
+    updateRevenueDbButtons();
+  });
+});
 
 warehouseTypeControl.addEventListener("change", (event) => {
   const changed = event.target.closest('input[name="warehouseType"]');

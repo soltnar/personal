@@ -4,22 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Аналитика персонала по проходной</title>
-  <link rel="stylesheet" href="styles.css?v=2.2.6" />
+  <link rel="stylesheet" href="styles.css?v=3.0.0" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
 <body>
   <main class="app">
     <div class="titleRow">
-      <h1>Количество работающего персонала в день</h1>
+      <div><p class="eyebrow">ОПЕРАЦИОННАЯ АНАЛИТИКА</p><h1>Персонал и выручка</h1></div>
       <span class="versionBadge">Версия: <span id="appVersion"></span></span>
     </div>
-    <p class="subtitle">Источник данных: проходная. Смена: больше 7 часов = 1, до 7 часов = 0.5. Сутки считаются с 04:00 до 03:59.</p>
+    <p class="subtitle">Все предприятия, смены и выручка — в одном отчёте.</p>
 
     <section class="panel autoDataPanel">
       <div>
-        <h3 class="panelTitle">Автоматическая загрузка из Saby</h3>
-        <p class="hint">Выберите период: сайт получит события проходной вместе с должностями и подразделениями, затем подтянет выручку.</p>
+        <p class="eyebrow">01 / ДАННЫЕ</p><h3 class="panelTitle">За какой период смотрим?</h3>
+        <p class="hint">Загрузите проходную и выручку из Saby.</p>
+        <div class="presets" aria-label="Быстрый выбор периода"><button type="button" data-period="week">7 дней</button><button type="button" data-period="month">Этот месяц</button><button type="button" data-period="previous">Прошлый месяц</button></div>
       </div>
       <div class="periodFields">
         <label class="label" for="sabyFrom">С даты
@@ -35,9 +36,9 @@
         <button id="loadSabyBtn" type="button">Загрузить данные из Saby</button>
         <button id="loadRevenueDbBtn" type="button" class="secondaryBtn">Обновить только выручку</button>
       </div>
-      <p id="sabyApiStatus" class="status">Проверяем доступ к Saby…</p>
+      <div class="statusGroup" aria-live="polite"><p id="sabyApiStatus" class="status">Проверяем доступ к Saby…</p>
       <p id="revenueDbStatus" class="status compactStatus">Выручка будет загружена после проходной.</p>
-      <p id="status" class="status compactStatus">Данные проходной пока не загружены.</p>
+      <p id="status" class="status compactStatus">Данные проходной пока не загружены.</p></div>
       <select id="dateSelect" multiple hidden aria-hidden="true"></select>
     </section>
 
@@ -75,15 +76,17 @@
 
     <section class="panel filtersPanel">
       <div class="filterIntro">
-        <h3 class="panelTitle">Фильтры расчёта</h3>
+        <p class="eyebrow">02 / НАСТРОЙКИ ОТЧЁТА</p><h3 class="panelTitle">Что включить в расчёт</h3>
         <p class="hint">Выберите рестораны, состав выручки и группы сотрудников.</p>
       </div>
 
       <div class="filtersLayout">
         <div class="filterCard restaurantFilter">
           <label class="filterHeading" for="restaurantSelect">Рестораны</label>
-          <p class="filterHint">Можно выбрать несколько точек</p>
-          <select id="restaurantSelect" multiple size="10">
+          <div class="restaurantToolbar"><input id="restaurantSearch" type="search" placeholder="Найти предприятие…" aria-label="Поиск предприятия"><button id="selectAllRestaurants" type="button" class="textBtn">Все</button><button id="clearRestaurants" type="button" class="textBtn">Снять</button></div>
+          <p class="filterHint" id="restaurantCount">Предприятия появятся после загрузки</p>
+          <div id="restaurantChecklist" class="restaurantChecklist"></div>
+          <select id="restaurantSelect" multiple size="10" hidden>
             <option disabled selected>Появятся после загрузки данных</option>
           </select>
         </div>
@@ -118,7 +121,9 @@
       <button id="xlsxBtn" disabled>Скачать Excel (матрица)</button>
     </section>
 
-    <section class="panel">
+    <section class="panel resultsPanel">
+      <div class="resultsHeading"><div><p class="eyebrow">03 / РЕЗУЛЬТАТЫ</p><h3 class="panelTitle">Смены по предприятиям</h3></div><span class="calculationNote">Сутки 04:00–03:59 · более 7 ч = 1 смена, до 7 ч = 0,5</span></div>
+      <div class="metrics" id="metrics"><div><span>Всего смен</span><strong id="metricShifts">—</strong></div><div><span>Выручка</span><strong id="metricRevenue">—</strong></div><div><span>Предприятий в отчёте</span><strong id="metricRestaurants">—</strong></div><div><span>Дней в отчёте</span><strong id="metricDays">—</strong></div></div>
       <div id="summary" class="summary">Нет данных для отображения.</div>
       <div class="tableWrap">
         <table id="resultTable">
@@ -135,14 +140,14 @@
               <th>Итого</th>
             </tr>
           </thead>
-          <tbody></tbody>
+          <tbody><tr><td colspan="9" class="initialEmpty"><strong>Здесь появится ваш отчёт</strong><span>Выберите период и загрузите данные, чтобы сравнить смены и выручку предприятий.</span></td></tr></tbody>
         </table>
       </div>
     </section>
 
-    <footer class="footer">История версий: файл `versions.md`</footer>
+    <footer class="footer">Персонал и выручка · Источник данных: Saby <span>Рабочие сутки с 04:00</span></footer>
   </main>
 
-  <script src="script.js?v=2.2.6"></script>
+  <script src="script.js?v=3.0.0"></script>
 </body>
 </html>
