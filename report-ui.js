@@ -48,26 +48,36 @@ async function loadScopedReport() {
 function calculateScopedRows() {
   const selected=new Set(getSelectedValues(restaurantSelect)),groups=new Set(getCheckedGroups());
   const daily=(reportRows||[]).filter(r=>selected.has(r.restaurant)).map(source=>{
-    const row={...source,details:{...source.details},total:0};
+    const row={...source,details:{...source.details},total:0,hasConflict:false};
     for(const [role,label] of Object.entries(roleLabels)) {
       if(!groups.has(label)||!source.allowedRoles.includes(role)){row[role]=null;row.details[role]=[];}
       else row.total+=row[role]||0;
+      if(groups.has(label)&&source.allowedRoles.includes(role)&&row.details[role]?.some(p=>p.hasConflict)) row.hasConflict=true;
     }
+    row.coverage={};
+    for(const role of Object.keys(roleLabels)) row.coverage[role]=productivitySample(row,role);
     return row;
   });
   if(document.getElementById("reportView").value==="daily") return daily;
   const map=new Map();
   for(const row of daily){
-    if(!map.has(row.restaurant)) map.set(row.restaurant,{...row,dateIso:"",details:{kitchen:[],hall:[],bar:[],delivery:[]},kitchen:row.kitchen===null?null:0,hall:row.hall===null?null:0,bar:row.bar===null?null:0,delivery:row.delivery===null?null:0,revenue:0,kitchenRevenue:0,barRevenue:0,total:0});
+    if(!map.has(row.restaurant)) map.set(row.restaurant,{...row,dateIso:"",dailyRows:[],details:{kitchen:[],hall:[],bar:[],delivery:[]},coverage:Object.fromEntries(Object.keys(roleLabels).map(k=>[k,{revenue:0,shifts:0,covered:0,missing:0,missingShifts:0}])),kitchen:row.kitchen===null?null:0,hall:row.hall===null?null:0,bar:row.bar===null?null:0,delivery:row.delivery===null?null:0,revenue:null,kitchenRevenue:null,barRevenue:null,total:0});
     const target=map.get(row.restaurant);target.total+=row.total;target.hasConflict ||= row.hasConflict;
-    for(const role of Object.keys(roleLabels)){if(Number.isFinite(row[role]))target[role]+=row[role];target.details[role].push(...(row.details[role]||[]).map(p=>({...p,person:`${p.person} · ${prettyDate(row.dateIso)}`})));}
-    for(const field of ['revenue','kitchenRevenue','barRevenue']) target[field]=Number.isFinite(target[field])&&Number.isFinite(row[field])?target[field]+row[field]:null;
+    target.dailyRows.push(row);
+    for(const role of Object.keys(roleLabels)){if(Number.isFinite(row[role]))target[role]+=row[role];target.details[role].push(...(row.details[role]||[]).map(p=>({...p,dateIso:row.dateIso})));}
+    for(const field of ['revenue','kitchenRevenue','barRevenue']) if(Number.isFinite(row[field])) target[field]=(target[field]??0)+row[field];
+    for(const role of Object.keys(roleLabels)) for(const key of ['revenue','shifts','covered','missing','missingShifts']) target.coverage[role][key]+=row.coverage[role][key];
   }
   return [...map.values()];
 }
 function formatProductivity(row,role) {
-  const numerator=row[roleRevenue[role]],denominator=row[role];
-  return Number.isFinite(numerator)&&denominator>0?`${formatMoney(numerator/denominator)} ₽`:"—";
+  const sample=row.coverage?.[role]||productivitySample(row,role);
+  return sample.shifts>0?`${formatMoney(sample.revenue/sample.shifts)} ₽${sample.missing?' *':''}`:"—";
+}
+function productivitySample(row,role){
+  const shifts=row[role]||0,revenue=row[roleRevenue[role]];
+  const valid=Number.isFinite(revenue)&&shifts>0;
+  return {revenue:valid?revenue:0,shifts:valid?shifts:0,covered:valid?1:0,missing:shifts>0&&!Number.isFinite(revenue)?1:0,missingShifts:shifts>0&&!Number.isFinite(revenue)?shifts:0};
 }
 function renderProductivity(rows) {
   const container=document.getElementById('productivity');if(!container)return;
@@ -76,10 +86,9 @@ function renderProductivity(rows) {
     if(!getCheckedGroups().includes(label))continue;
     const eligible=rows.filter(r=>r.allowedRoles?.includes(role));
     if(!eligible.length) continue;
-    const complete=eligible.length&&eligible.every(r=>Number.isFinite(r[roleRevenue[role]]));
-    const shifts=eligible.reduce((sum,r)=>sum+(r[role]||0),0);
-    const revenue=eligible.reduce((sum,r)=>sum+(r[roleRevenue[role]]||0),0);
-    const card=document.createElement('article');card.innerHTML=`<span>${label}</span><strong>${complete&&shifts>0?formatMoney(revenue/shifts)+" ₽":"—"}</strong><small>${role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':'Общая выручка'} / смены ${label.toLowerCase()}</small><p>${formatShift(shifts)} смен · ${complete?formatMoney(revenue)+" ₽":"нет полных данных выручки"}</p>`;
+    const totals={revenue:0,shifts:0,covered:0,missing:0,missingShifts:0};
+    eligible.forEach(r=>{const sample=r.coverage?.[role]||productivitySample(r,role);for(const key of Object.keys(totals))totals[key]+=sample[key];});
+    const card=document.createElement('article');card.innerHTML=`<span>${label}</span><strong>${totals.shifts>0?formatMoney(totals.revenue/totals.shifts)+" ₽":"—"}</strong><small>${role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':'Общая выручка'} / смены ${label.toLowerCase()}</small><p>В расчёте: ${formatShift(totals.shifts)} смен · ${formatMoney(totals.revenue)} ₽</p>${totals.missing?`<p class="coverageWarning">Не включено: ${totals.missing} предприятие-дней, ${formatShift(totals.missingShifts)} смен без выручки.</p>`:''}`;
     container.append(card);
   }
   document.getElementById('metricDays').textContent=reportRows?.length?new Set(reportRows.map(r=>r.dateIso)).size:"—";
@@ -98,7 +107,8 @@ document.getElementById('installApp').onclick=async()=>{if(installEvent){await i
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
 function reportExportData(rows){
-  return [["Период / дата","Предприятие","Кухня, смены","Зал, смены","Бар, смены","Доставка, смены","Общая выручка","Выручка кухни","Выручка бара","Кухня ₽/смену","Зал ₽/смену","Бар ₽/смену","Доставка ₽/смену"],...rows.map(r=>[r.dateIso||`${sabyFromInput.value} — ${sabyToInput.value}`,r.restaurant,...['kitchen','hall','bar','delivery'].map(k=>r[k]??""),r.revenue??"",r.kitchenRevenue??"",r.barRevenue??"",...['kitchen','hall','bar','delivery'].map(k=>Number.isFinite(r[roleRevenue[k]])&&r[k]>0?r[roleRevenue[k]]/r[k]:"")])];
+  const roles=['kitchen','hall','bar','delivery'];
+  return [["Период / дата","Предприятие","Кухня, смены","Зал, смены","Бар, смены","Доставка, смены","Сохранённая общая выручка","Сохранённая выручка кухни","Сохранённая выручка бара",...roles.flatMap(k=>[`${roleLabels[k]} ₽/смену`,`${roleLabels[k]} смен в расчёте выработки`,`${roleLabels[k]} пропущено предприятие-дней`])],...rows.map(r=>[r.dateIso||`${sabyFromInput.value} — ${sabyToInput.value}`,r.restaurant,...roles.map(k=>r[k]??""),r.revenue??"",r.kitchenRevenue??"",r.barRevenue??"",...roles.flatMap(k=>{const sample=r.coverage?.[k]||productivitySample(r,k);return [sample.shifts>0?sample.revenue/sample.shifts:"",sample.shifts,sample.missing];})])];
 }
 function exportReportCSV(rows){return reportExportData(rows).map(line=>line.map(value=>`"${String(value).replaceAll('"','""')}"`).join(';')).join('\n');}
 function clearScopedSession(){reportRows=[];reportAdmin=false;lastResultRows=[];baseRecords=[];mappedRecords=[];revenueRows=[];staffRestaurantMap.clear();renderTable([]);fillMultiSelect(restaurantSelect,[]);document.getElementById('accessSettings').hidden=true;document.getElementById('forceSyncBtn').hidden=true;document.getElementById('accessList').replaceChildren();}

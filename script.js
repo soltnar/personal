@@ -1,4 +1,4 @@
-const APP_VERSION = "4.0.0";
+const APP_VERSION = "4.0.1";
 let reportRows = null;
 let reportAdmin = false;
 const DAY_CUTOFF_SECONDS = 4 * 3600;
@@ -1315,7 +1315,13 @@ function renderPeopleList(items) {
 }
 
 function buildDetailsHtml(row) {
+  if(row.dailyRows) return row.dailyRows.slice().sort((a,b)=>a.dateIso.localeCompare(b.dateIso)).map(day=>`<section class="dayBreakdown"><h3>${prettyDate(day.dateIso)} <small>${formatShift(day.total)} смен</small></h3>${buildDetailsHtml(day)}</section>`).join("");
+  const issues=Object.values(row.details).flat().filter(p=>p.hasConflict);
+  const issueSummary=issues.length?`<p class="reviewSummary">Проверить ${issues.length} записей в выбранных разделах: ${escapeHtml([...new Set(issues.map(p=>p.reviewReason||"требует проверки"))].join(", "))}. Сотрудники отмечены ниже.</p>`:"";
+  const missing=Object.entries(row.coverage||{}).filter(([role,sample])=>sample.missing>0&&getCheckedGroups().includes(roleLabels[role])).map(([role])=>roleLabels[role]);
   return `
+    ${issueSummary}
+    ${missing.length?`<p class="coverageWarning">Нет выручки для расчёта: ${escapeHtml(missing.join(", "))}. Этот день исключён из выработки соответствующего раздела.</p>`:""}
     <div class="detailsWrap">
       <div class="detailsCol"><h4>Кухня (${formatShift(row.kitchen)})</h4>${renderPeopleList(row.details.kitchen)}</div>
       <div class="detailsCol"><h4>Зал (${formatShift(row.hall)})</h4>${renderPeopleList(row.details.hall)}</div>
@@ -1327,7 +1333,10 @@ function buildDetailsHtml(row) {
 
 function renderTable(rows) {
   document.getElementById("metricShifts").textContent = rows.length ? formatShift(rows.reduce((sum, row) => sum + row.total, 0)) : "—";
-  document.getElementById("metricRevenue").textContent = rows.length && rows.every(row=>Number.isFinite(row.revenue)) ? `${formatMoney(rows.reduce((sum, row) => sum + row.revenue, 0))} ₽` : "—";
+  const knownRevenue=rows.filter(row=>Number.isFinite(row.revenue));
+  const partialRevenue=knownRevenue.length<rows.length;
+  document.getElementById("metricRevenue").textContent = knownRevenue.length ? `${formatMoney(knownRevenue.reduce((sum, row) => sum + row.revenue, 0))} ₽${partialRevenue?' *':''}` : "—";
+  document.getElementById("metricRevenue").title=partialRevenue?"Сумма сохранённой выручки; есть предприятия без выручки":"Сумма сохранённой выручки";
   document.getElementById("metricRestaurants").textContent = rows.length ? new Set(rows.map((row) => row.restaurant).filter((name) => name !== "Подразделение не определено")).size : "—";
   document.getElementById("metricDays").textContent = rows.length ? new Set(rows.map((row) => row.dateIso)).size : "—";
   renderProductivity(rows);
@@ -1351,7 +1360,7 @@ function renderTable(rows) {
     totalHall += r.hall || 0;
     totalDelivery += r.delivery || 0;
     totalBar += r.bar || 0;
-    totalRevenue = totalRevenue !== null && Number.isFinite(r.revenue) ? totalRevenue + r.revenue : null;
+    totalRevenue += Number.isFinite(r.revenue) ? r.revenue : 0;
 
     const tr = document.createElement("tr");
     const detailsTr = document.createElement("tr");
@@ -1367,7 +1376,7 @@ function renderTable(rows) {
     tr.innerHTML = `
       <td><button class="detailBtn" id="${toggleId}" type="button">Показать</button></td>
       <td>${r.dateIso ? prettyDate(r.dateIso) : "Весь период"}</td>
-      <td>${escapeHtml(r.restaurant)}${r.restaurant === "Фабрика кухни" ? ' <span class="productionBadge">производство</span>' : ''}${r.hasConflict ? ' <span class="conflictBadge">требует проверки</span>' : ''}</td>
+      <td>${escapeHtml(r.restaurant)}${r.restaurant === "Фабрика кухни" ? ' <span class="productionBadge">производство</span>' : ''}${r.hasConflict ? ` <span class="conflictBadge">проверить: ${Object.values(r.details).flat().filter(p=>p.hasConflict).length}</span>` : ''}</td>
       <td>${formatShift(r.kitchen)}</td>
       <td>${formatShift(r.hall)}</td>
       <td>${formatShift(r.delivery)}</td>
@@ -1392,7 +1401,7 @@ function renderTable(rows) {
     });
   });
 
-  summaryEl.textContent = `Строк: ${rows.length}. Кухня: ${formatShift(totalKitchen)}, Зал: ${formatShift(totalHall)}, Доставка: ${formatShift(totalDelivery)}, Бар: ${formatShift(totalBar)}, Выручка: ${totalRevenue === null ? "—" : formatMoney(totalRevenue)}, Всего смен: ${formatShift(totalKitchen + totalHall + totalDelivery + totalBar)}.`;
+  summaryEl.textContent = `Строк: ${rows.length}. Кухня: ${formatShift(totalKitchen)}, Зал: ${formatShift(totalHall)}, Доставка: ${formatShift(totalDelivery)}, Бар: ${formatShift(totalBar)}, Выручка из базы: ${knownRevenue.length ? formatMoney(totalRevenue) : "—"}${partialRevenue?' (есть предприятия без выручки)':''}, Всего смен: ${formatShift(totalKitchen + totalHall + totalDelivery + totalBar)}.`;
   csvBtn.disabled = false;
   xlsxBtn.disabled = false;
 }
