@@ -1,4 +1,6 @@
-const APP_VERSION = "3.1.2";
+const APP_VERSION = "4.0.0";
+let reportRows = null;
+let reportAdmin = false;
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -203,6 +205,7 @@ function classifyRole(roleText) {
 }
 
 function formatShift(value) {
+  if (!Number.isFinite(value)) return "—";
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
@@ -276,7 +279,7 @@ async function initRevenueDatabase() {
     updateRevenueDbButtons();
     if (session) {
       setRevenueDbStatus("Вход выполнен. Можно подтянуть выручку из базы.", "success");
-      setSabyApiStatus("Вход выполнен. Выберите период и нажмите «Загрузить данные из Saby».", "success");
+      setSabyApiStatus("Вход выполнен. Выберите период и нажмите «Показать отчёт из базы».", "success");
     } else {
       setRevenueDbStatus("Для автозагрузки выручки войдите через Google.", "");
       setSabyApiStatus("Для автоматической загрузки войдите через Google.", "");
@@ -470,6 +473,7 @@ async function fetchSabyEmployees(accessToken) {
 }
 
 async function loadSabyFromApi(options = {}) {
+  if (options.force !== true) return loadScopedReport();
   if (sabyApiLoading || !supabaseClient) return;
   const from = sabyFromInput?.value || "";
   const to = sabyToInput?.value || "";
@@ -524,7 +528,7 @@ async function loadSabyFromApi(options = {}) {
       `Из базы за ${Math.max(1, Math.round((Date.now() - startedAt) / 1000))} сек.: ${allRows.length} событий. Смены распределены по последнему выходу за рабочие сутки.`,
       "success"
     );
-    await loadRevenueFromDatabase({ silent: true, range: { from, to } });
+    await loadScopedReport();
   } catch (error) {
     setSabyApiStatus(`Отчёт не обновлён: ${error?.message || "неизвестная ошибка"}.`, "error");
   } finally {
@@ -537,6 +541,7 @@ async function loadSabyFromApi(options = {}) {
 }
 
 async function loadRevenueFromDatabase(options = {}) {
+  if (reportRows !== null) return loadScopedReport();
   if (revenueDbLoading) return;
   if (!supabaseClient) {
     setRevenueDbStatus("База выручки пока недоступна. Используйте Excel-файл выручек.", "error");
@@ -1224,6 +1229,7 @@ function workedSecondsToShift(workedSeconds) {
 }
 
 function calculate(records) {
+  if (reportRows !== null) return calculateScopedRows();
   const selectedDates = getSelectedValues(dateSelect);
   const selectedRestaurants = getSelectedValues(restaurantSelect);
   const selectedGroups = new Set(getCheckedGroups());
@@ -1303,6 +1309,7 @@ function calculate(records) {
 }
 
 function renderPeopleList(items) {
+  if (!items) return `<div class="emptyList">Раздел недоступен</div>`;
   if (!items.length) return `<div class="emptyList">Нет сотрудников</div>`;
   return `<ul>${items.map((p) => `<li>${escapeHtml(p.person)} — ${formatShift(p.shift)}${p.hasConflict ? ` <span class="conflictBadge">${escapeHtml(p.reviewReason || "требует проверки")}</span>` : ''}</li>`).join("")}</ul>`;
 }
@@ -1320,9 +1327,10 @@ function buildDetailsHtml(row) {
 
 function renderTable(rows) {
   document.getElementById("metricShifts").textContent = rows.length ? formatShift(rows.reduce((sum, row) => sum + row.total, 0)) : "—";
-  document.getElementById("metricRevenue").textContent = rows.length ? `${formatMoney(rows.reduce((sum, row) => sum + row.revenue, 0))} ₽` : "—";
+  document.getElementById("metricRevenue").textContent = rows.length && rows.every(row=>Number.isFinite(row.revenue)) ? `${formatMoney(rows.reduce((sum, row) => sum + row.revenue, 0))} ₽` : "—";
   document.getElementById("metricRestaurants").textContent = rows.length ? new Set(rows.map((row) => row.restaurant).filter((name) => name !== "Подразделение не определено")).size : "—";
   document.getElementById("metricDays").textContent = rows.length ? new Set(rows.map((row) => row.dateIso)).size : "—";
+  renderProductivity(rows);
   tableBody.innerHTML = "";
 
   if (!rows.length) {
@@ -1339,11 +1347,11 @@ function renderTable(rows) {
   let totalRevenue = 0;
 
   rows.forEach((r) => {
-    totalKitchen += r.kitchen;
-    totalHall += r.hall;
-    totalDelivery += r.delivery;
-    totalBar += r.bar;
-    totalRevenue += r.revenue || 0;
+    totalKitchen += r.kitchen || 0;
+    totalHall += r.hall || 0;
+    totalDelivery += r.delivery || 0;
+    totalBar += r.bar || 0;
+    totalRevenue = totalRevenue !== null && Number.isFinite(r.revenue) ? totalRevenue + r.revenue : null;
 
     const tr = document.createElement("tr");
     const detailsTr = document.createElement("tr");
@@ -1351,23 +1359,29 @@ function renderTable(rows) {
     detailsTr.style.display = "none";
 
     const detailsCell = document.createElement("td");
-    detailsCell.colSpan = 9;
+    detailsCell.colSpan = 13;
     detailsCell.innerHTML = buildDetailsHtml(r);
     detailsTr.appendChild(detailsCell);
 
     const toggleId = `toggle-${r.dateIso}-${Math.random().toString(36).slice(2, 8)}`;
     tr.innerHTML = `
       <td><button class="detailBtn" id="${toggleId}" type="button">Показать</button></td>
-      <td>${prettyDate(r.dateIso)}</td>
+      <td>${r.dateIso ? prettyDate(r.dateIso) : "Весь период"}</td>
       <td>${escapeHtml(r.restaurant)}${r.restaurant === "Фабрика кухни" ? ' <span class="productionBadge">производство</span>' : ''}${r.hasConflict ? ' <span class="conflictBadge">требует проверки</span>' : ''}</td>
       <td>${formatShift(r.kitchen)}</td>
       <td>${formatShift(r.hall)}</td>
       <td>${formatShift(r.delivery)}</td>
       <td>${formatShift(r.bar)}</td>
-      <td>${formatMoney(r.revenue)}</td>
+      <td>${Number.isFinite(r.revenue) ? formatMoney(r.revenue) : "—"}</td>
       <td>${formatShift(r.total)}</td>
+      <td>${formatProductivity(r,"kitchen")}</td>
+      <td>${formatProductivity(r,"hall")}</td>
+      <td>${formatProductivity(r,"bar")}</td>
+      <td>${formatProductivity(r,"delivery")}</td>
     `;
 
+    const cellLabels=["Детали","Дата","Предприятие","Кухня · смены","Зал · смены","Доставка · смены","Бар · смены","Общая выручка","Всего смен","Кухня · ₽/смену","Зал · ₽/смену","Бар · ₽/смену","Доставка · ₽/смену"];
+    Array.from(tr.children).forEach((cell,index)=>{cell.dataset.label=cellLabels[index];});
     tableBody.appendChild(tr);
     tableBody.appendChild(detailsTr);
 
@@ -1378,12 +1392,13 @@ function renderTable(rows) {
     });
   });
 
-  summaryEl.textContent = `Строк: ${rows.length}. Кухня: ${formatShift(totalKitchen)}, Зал: ${formatShift(totalHall)}, Доставка: ${formatShift(totalDelivery)}, Бар: ${formatShift(totalBar)}, Выручка: ${formatMoney(totalRevenue)}, Всего смен: ${formatShift(totalKitchen + totalHall + totalDelivery + totalBar)}.`;
+  summaryEl.textContent = `Строк: ${rows.length}. Кухня: ${formatShift(totalKitchen)}, Зал: ${formatShift(totalHall)}, Доставка: ${formatShift(totalDelivery)}, Бар: ${formatShift(totalBar)}, Выручка: ${totalRevenue === null ? "—" : formatMoney(totalRevenue)}, Всего смен: ${formatShift(totalKitchen + totalHall + totalDelivery + totalBar)}.`;
   csvBtn.disabled = false;
   xlsxBtn.disabled = false;
 }
 
 function toCSV(rows) {
+  if (reportRows !== null) return exportReportCSV(rows);
   const head = ["Дата", "Ресторан", "Кухня", "Зал", "Доставка", "Бар", "Выручка", "Итого"];
   const lines = [head.join(";")];
   rows.forEach((r) => {
@@ -1422,6 +1437,12 @@ function buildMatrix(rows, fieldName) {
 }
 
 function exportExcelPivot(rows) {
+  if (reportRows !== null) {
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(reportExportData(rows)),"Выработка и смены");
+    XLSX.writeFile(wb,"персонал_и_выработка.xlsx");
+    return;
+  }
   const groups = getCheckedGroups();
   const wb = XLSX.utils.book_new();
 
@@ -1558,7 +1579,7 @@ universalInput?.addEventListener("change", async (e) => {
 });
 
 calcBtn.addEventListener("click", () => {
-  if (!mappedRecords.length) {
+  if (!mappedRecords.length && reportRows === null) {
     summaryEl.textContent = "Сначала загрузите данные из Saby или откройте резервную загрузку Excel.";
     return;
   }

@@ -1,0 +1,107 @@
+const REPORT_API = `${SUPABASE_URL}/functions/v1/personnel-report`;
+const roleLabels = { kitchen:"Кухня", hall:"Зал", bar:"Бар", delivery:"Доставка" };
+const roleRevenue = {kitchen:"kitchenRevenue",bar:"barRevenue",hall:"revenue",delivery:"revenue"};
+async function reportRequest(path="", init={}) {
+  const {data}=await supabaseClient.auth.getSession();
+  if(!data.session) throw new Error("Войдите через Google");
+  const response=await fetch(REPORT_API+path,{...init,cache:"no-store",signal:AbortSignal.timeout(60000),headers:{Authorization:`Bearer ${data.session.access_token}`,apikey:SUPABASE_PUBLISHABLE_KEY,"Content-Type":"application/json"}});
+  const body=await response.json();
+  if(!response.ok) throw new Error(body.error||"Не удалось получить данные");
+  return body;
+}
+async function loadScopedReport() {
+  if(!supabaseClient) return;
+  const startingSession=(await supabaseClient.auth.getSession()).data.session;
+  const startingUser=startingSession?.user?.id;
+  const from=sabyFromInput.value,to=sabyToInput.value;
+  if(!from||!to||from>to) return setSabyApiStatus("Проверьте период","error");
+  loadSabyBtn.disabled=true;loadSabyBtn.classList.add("is-busy");
+  try {
+    setSabyApiStatus("Читаем разрешённые данные из базы…","loading");
+    const payload=await reportRequest(`?from=${from}&to=${to}`);
+    const currentUser=(await supabaseClient.auth.getSession()).data.session?.user?.id;
+    if(!startingUser||currentUser!==startingUser) return;
+    reportRows=payload.rows;reportAdmin=payload.admin;
+    document.getElementById("accessSettings").hidden=!reportAdmin;
+    document.getElementById("forceSyncBtn").hidden=!reportAdmin;
+    const restaurants=[...new Set(reportRows.map(r=>r.restaurant))].sort((a,b)=>a.localeCompare(b,"ru"));
+    fillMultiSelect(restaurantSelect,restaurants);
+    fillMultiSelect(dateSelect,[...new Set(reportRows.map(r=>r.dateIso))].sort());
+    document.querySelectorAll('.groupCheck').forEach(input=>{
+      const role=Object.keys(roleLabels).find(k=>roleLabels[k]===input.value);
+      input.disabled=!reportAdmin&&!reportRows.some(r=>r.allowedRoles.includes(role));
+      input.checked=!input.disabled;input.closest('label').hidden=input.disabled;
+    });
+    const select=document.getElementById("accessRestaurant");select.replaceChildren();
+    restaurants.filter(r=>r!=="Подразделение не определено").forEach(r=>{const o=document.createElement('option');o.value=r;o.textContent=r;select.append(o);});
+    mappedRecords=[];baseRecords=[];
+    lastResultRows=calculateScopedRows();renderTable(lastResultRows);
+    setSabyApiStatus(`Отчёт из базы · ${from} — ${to} · ${payload.email}`,"success");
+    setRevenueDbStatus("Выработка: ₽ на учитываемую смену. Общий показатель = сумма выручки / сумма смен.","success");
+    statusEl.textContent="Доступ проверен сервером. Отображаются только разрешённые предприятия и разделы.";
+  }catch(error){
+    reportRows=[];lastResultRows=[];renderTable([]);
+    csvBtn.disabled=true;xlsxBtn.disabled=true;
+    setSabyApiStatus(error.message,"error");
+  }finally{loadSabyBtn.disabled=false;loadSabyBtn.classList.remove("is-busy");}
+}
+function calculateScopedRows() {
+  const selected=new Set(getSelectedValues(restaurantSelect)),groups=new Set(getCheckedGroups());
+  const daily=(reportRows||[]).filter(r=>selected.has(r.restaurant)).map(source=>{
+    const row={...source,details:{...source.details},total:0};
+    for(const [role,label] of Object.entries(roleLabels)) {
+      if(!groups.has(label)||!source.allowedRoles.includes(role)){row[role]=null;row.details[role]=[];}
+      else row.total+=row[role]||0;
+    }
+    return row;
+  });
+  if(document.getElementById("reportView").value==="daily") return daily;
+  const map=new Map();
+  for(const row of daily){
+    if(!map.has(row.restaurant)) map.set(row.restaurant,{...row,dateIso:"",details:{kitchen:[],hall:[],bar:[],delivery:[]},kitchen:row.kitchen===null?null:0,hall:row.hall===null?null:0,bar:row.bar===null?null:0,delivery:row.delivery===null?null:0,revenue:0,kitchenRevenue:0,barRevenue:0,total:0});
+    const target=map.get(row.restaurant);target.total+=row.total;target.hasConflict ||= row.hasConflict;
+    for(const role of Object.keys(roleLabels)){if(Number.isFinite(row[role]))target[role]+=row[role];target.details[role].push(...(row.details[role]||[]).map(p=>({...p,person:`${p.person} · ${prettyDate(row.dateIso)}`})));}
+    for(const field of ['revenue','kitchenRevenue','barRevenue']) target[field]=Number.isFinite(target[field])&&Number.isFinite(row[field])?target[field]+row[field]:null;
+  }
+  return [...map.values()];
+}
+function formatProductivity(row,role) {
+  const numerator=row[roleRevenue[role]],denominator=row[role];
+  return Number.isFinite(numerator)&&denominator>0?`${formatMoney(numerator/denominator)} ₽`:"—";
+}
+function renderProductivity(rows) {
+  const container=document.getElementById('productivity');if(!container)return;
+  container.replaceChildren();
+  for(const [role,label] of Object.entries(roleLabels)) {
+    if(!getCheckedGroups().includes(label))continue;
+    const eligible=rows.filter(r=>r.allowedRoles?.includes(role));
+    if(!eligible.length) continue;
+    const complete=eligible.length&&eligible.every(r=>Number.isFinite(r[roleRevenue[role]]));
+    const shifts=eligible.reduce((sum,r)=>sum+(r[role]||0),0);
+    const revenue=eligible.reduce((sum,r)=>sum+(r[roleRevenue[role]]||0),0);
+    const card=document.createElement('article');card.innerHTML=`<span>${label}</span><strong>${complete&&shifts>0?formatMoney(revenue/shifts)+" ₽":"—"}</strong><small>${role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':'Общая выручка'} / смены ${label.toLowerCase()}</small><p>${formatShift(shifts)} смен · ${complete?formatMoney(revenue)+" ₽":"нет полных данных выручки"}</p>`;
+    container.append(card);
+  }
+  document.getElementById('metricDays').textContent=reportRows?.length?new Set(reportRows.map(r=>r.dateIso)).size:"—";
+}
+async function showAccess(){
+  const status=document.getElementById('accessStatus');
+  try{const data=await reportRequest('?resource=access');const list=document.getElementById('accessList');list.replaceChildren();for(const grant of data.grants){const item=document.createElement('div');item.className='grantRow';const text=document.createElement('span');text.textContent=`${grant.email} · ${grant.restaurant} · ${grant.roles.map(r=>roleLabels[r]).join(', ')}`;const remove=document.createElement('button');remove.textContent='Отозвать';remove.className='textBtn';remove.onclick=async()=>{try{await reportRequest('?resource=access',{method:'POST',body:JSON.stringify({...grant,roles:[]})});await showAccess();}catch(e){status.textContent=e.message;}};item.append(text,remove);list.append(item);}}catch(e){status.textContent=e.message;}
+}
+document.getElementById('accessForm').addEventListener('submit',async(event)=>{event.preventDefault();const status=document.getElementById('accessStatus');try{const roles=[...document.querySelectorAll('[name=accessRole]:checked')].map(i=>i.value);if(!roles.length)throw new Error('Выберите хотя бы один раздел');await reportRequest('?resource=access',{method:'POST',body:JSON.stringify({email:document.getElementById('accessEmail').value,restaurant:document.getElementById('accessRestaurant').value,roles})});status.textContent='Доступ сохранён';await showAccess();}catch(e){status.textContent=e.message;}});
+document.getElementById('accessReload').addEventListener('click',showAccess);
+document.getElementById('reportView').addEventListener('change',()=>{if(reportRows!==null){lastResultRows=calculateScopedRows();renderTable(lastResultRows);}});
+document.querySelectorAll('.groupCheck').forEach(i=>i.addEventListener('change',()=>{if(reportRows!==null){lastResultRows=calculateScopedRows();renderTable(lastResultRows);}}));
+let installEvent;
+window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installEvent=event;});
+document.getElementById('installApp').onclick=async()=>{if(installEvent){await installEvent.prompt();installEvent=null;}else alert('iPhone: откройте меню «Поделиться» → «На экран Домой». Android: меню браузера → «Установить приложение».');};
+if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+
+function reportExportData(rows){
+  return [["Период / дата","Предприятие","Кухня, смены","Зал, смены","Бар, смены","Доставка, смены","Общая выручка","Выручка кухни","Выручка бара","Кухня ₽/смену","Зал ₽/смену","Бар ₽/смену","Доставка ₽/смену"],...rows.map(r=>[r.dateIso||`${sabyFromInput.value} — ${sabyToInput.value}`,r.restaurant,...['kitchen','hall','bar','delivery'].map(k=>r[k]??""),r.revenue??"",r.kitchenRevenue??"",r.barRevenue??"",...['kitchen','hall','bar','delivery'].map(k=>Number.isFinite(r[roleRevenue[k]])&&r[k]>0?r[roleRevenue[k]]/r[k]:"")])];
+}
+function exportReportCSV(rows){return reportExportData(rows).map(line=>line.map(value=>`"${String(value).replaceAll('"','""')}"`).join(';')).join('\n');}
+function clearScopedSession(){reportRows=[];reportAdmin=false;lastResultRows=[];baseRecords=[];mappedRecords=[];revenueRows=[];staffRestaurantMap.clear();renderTable([]);fillMultiSelect(restaurantSelect,[]);document.getElementById('accessSettings').hidden=true;document.getElementById('forceSyncBtn').hidden=true;document.getElementById('accessList').replaceChildren();}
+// Clear financial/personnel data whenever a session changes, including logout.
+let scopedUserId=revenueDbSession?.user?.id||null;
+if(supabaseClient) supabaseClient.auth.onAuthStateChange((_event,session)=>{if((session?.user?.id||null)!==scopedUserId){clearScopedSession();scopedUserId=session?.user?.id||null;}});

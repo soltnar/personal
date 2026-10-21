@@ -8,7 +8,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Персонал" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=3.1.2" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="stylesheet" href="styles.css?v=4.0.0" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -19,6 +20,7 @@
       <span class="versionBadge">Версия: <span id="appVersion"></span></span>
     </div>
     <p class="subtitle">Все предприятия, смены и выручка — в одном отчёте.</p>
+    <button id="installApp" class="secondaryBtn installButton" type="button">Установить приложение</button>
 
     <section class="panel autoDataPanel">
       <div>
@@ -38,7 +40,7 @@
         <button id="revenueDbLogin" type="button">Войти через Google</button>
         <button id="revenueDbLogout" type="button" class="secondaryBtn" hidden>Выйти</button>
         <button id="loadSabyBtn" type="button">Показать отчёт из базы</button>
-        <button id="loadRevenueDbBtn" type="button" class="secondaryBtn">Обновить только выручку</button>
+        <button id="loadRevenueDbBtn" type="button" class="secondaryBtn" hidden>Обновить отчёт</button>
       </div>
       <div class="statusGroup" aria-live="polite"><p id="sabyApiStatus" class="status">Проверяем доступ к Saby…</p>
       <p id="revenueDbStatus" class="status compactStatus">Выручка будет загружена после проходной.</p>
@@ -51,11 +53,25 @@
       <div class="fallbackContent">
         <h3 class="panelTitle">Обновление проходной</h3>
         <p class="hint">Отчёт читает сохранённые дни из базы. Предыдущие пять дней проверяются автоматически после 05:00 МСК. Для повторной загрузки выбранного периода используйте кнопку ниже.</p>
-        <button id="forceSyncBtn" type="button" class="secondaryBtn">Обновить выбранный период из Saby</button>
+        <button id="forceSyncBtn" type="button" class="secondaryBtn" hidden>Обновить выбранный период из Saby</button>
         <p class="hint">Смена учитывается на точке последнего выхода за рабочие сутки 04:00–03:59. Записи без выхода требуют проверки.</p>
       </div>
     </details>
-        <p class="hint">Выберите рестораны, состав выручки и группы сотрудников.</p>
+    <details id="accessSettings" class="panel fallbackPanel" hidden>
+      <summary>Права доступа сотрудников</summary>
+      <div class="fallbackContent">
+        <p class="hint">Для каждого предприятия назначайте разделы отдельно. Без назначения сотрудник не получит данные. Вход — через Google с указанным email.</p>
+        <form id="accessForm" class="accessForm">
+          <label>Email сотрудника<input id="accessEmail" type="email" required autocomplete="off"></label>
+          <label>Предприятие<select id="accessRestaurant" required></select></label>
+          <div class="accessRoles"><label><input type="checkbox" name="accessRole" value="kitchen">Кухня</label><label><input type="checkbox" name="accessRole" value="hall">Зал</label><label><input type="checkbox" name="accessRole" value="bar">Бар</label><label><input type="checkbox" name="accessRole" value="delivery">Доставка</label></div>
+          <button type="submit">Сохранить доступ</button><button id="accessReload" type="button" class="secondaryBtn">Показать назначения</button>
+        </form>
+        <p id="accessStatus" role="status"></p><div id="accessList"></div>
+      </div>
+    </details>
+    <section class="panel filtersPanel"><div class="filterIntro"><p class="eyebrow">02 / ФИЛЬТРЫ</p><h3 class="panelTitle">Предприятия и разделы</h3>
+        <p class="hint">Выберите предприятия и разделы. Выручка для каждой роли определяется автоматически.</p>
       </div>
 
       <div class="filtersLayout">
@@ -70,7 +86,7 @@
         </div>
 
         <div class="filterSide">
-          <fieldset class="filterCard warehouseFilter">
+          <fieldset class="filterCard warehouseFilter" hidden>
             <legend class="filterHeading">Выручка по складам</legend>
             <div class="segmentedControl" id="warehouseTypeControl">
               <label><input type="checkbox" name="warehouseType" value="all" checked><span>Все склады</span></label>
@@ -96,12 +112,14 @@
     <section class="panel actions">
       <button id="calcBtn">Рассчитать</button>
       <button id="csvBtn" disabled>Скачать CSV</button>
-      <button id="xlsxBtn" disabled>Скачать Excel (матрица)</button>
+      <button id="xlsxBtn" disabled>Скачать Excel</button>
     </section>
 
     <section class="panel resultsPanel">
+      <div class="viewToolbar"><label>Группировка <select id="reportView"><option value="enterprise">По предприятиям за период</option><option value="daily">По дням</option></select></label></div>
       <div class="resultsHeading"><div><p class="eyebrow">03 / РЕЗУЛЬТАТЫ</p><h3 class="panelTitle">Смены по предприятиям</h3></div><span class="calculationNote">Сутки 04:00–03:59 · более 7 ч = 1 смена, до 7 ч = 0,5</span></div>
       <div class="metrics" id="metrics"><div><span>Всего смен</span><strong id="metricShifts">—</strong></div><div><span>Выручка</span><strong id="metricRevenue">—</strong></div><div><span>Предприятий в отчёте</span><strong id="metricRestaurants">—</strong></div><div><span>Дней в отчёте</span><strong id="metricDays">—</strong></div></div>
+      <h3 class="panelTitle">Выработка по выбранным предприятиям</h3><p class="hint">₽ на учитываемую смену (1 или 0,5). Сумма выручки / сумма смен. Прочерк — нет смен или полных данных выручки.</p><div id="productivity" class="productivityGrid"></div>
       <div id="summary" class="summary">Нет данных для отображения.</div>
       <div class="tableWrap">
         <table id="resultTable">
@@ -116,6 +134,7 @@
               <th>Бар</th>
               <th>Выручка</th>
               <th>Итого</th>
+              <th>Кухня ₽/смену</th><th>Зал ₽/смену</th><th>Бар ₽/смену</th><th>Доставка ₽/смену</th>
             </tr>
           </thead>
           <tbody><tr><td colspan="9" class="initialEmpty"><strong>Здесь появится ваш отчёт</strong><span>Выберите период и загрузите данные, чтобы сравнить смены и выручку предприятий.</span></td></tr></tbody>
@@ -126,6 +145,7 @@
     <footer class="footer">Персонал и выручка · Источник данных: Saby <span>Рабочие сутки с 04:00</span></footer>
   </main>
 
-  <script src="script.js?v=3.1.2"></script>
+  <script src="script.js?v=4.0.0"></script>
+  <script src="report-ui.js?v=4.0.0"></script>
 </body>
 </html>
