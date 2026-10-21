@@ -1,4 +1,5 @@
 import { summarizeAttendance, restrictRows, roleKeys } from './engine.mjs';
+import { readSabyIdentity } from './identity.ts';
 const URL_BASE = Deno.env.get('SUPABASE_URL')!;
 const KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const OWNER = 'soltnar@gmail.com';
@@ -22,11 +23,18 @@ Deno.serve(async(req)=>{
   try {
     const authorization=req.headers.get('authorization')||'';
     if(!authorization.startsWith('Bearer ')) return json({error:'Войдите в приложение'},401);
-    const auth=await fetch(`${URL_BASE}/auth/v1/user`,{headers:{authorization,apikey:KEY},signal:AbortSignal.timeout(15000)});
-    if(!auth.ok) return json({error:'Сессия истекла'},401);
-    const user=await auth.json();
-    if(!user.email_confirmed_at) return json({error:'Подтвердите email'},403);
-    const email=String(user.email||'').trim().toLowerCase(),admin=email===OWNER;
+    const saby=await readSabyIdentity(authorization);
+    let email='',admin=false;
+    if(authorization.startsWith('Bearer ps_')){
+      if(!saby)return json({error:'Вход Saby истёк или ещё не разрешён администратором'},403);
+      email=`Saby: ${saby.display_name}`;
+    }else{
+      const auth=await fetch(`${URL_BASE}/auth/v1/user`,{headers:{authorization,apikey:KEY},signal:AbortSignal.timeout(15000)});
+      if(!auth.ok) return json({error:'Сессия истекла'},401);
+      const user=await auth.json();
+      if(!user.email_confirmed_at) return json({error:'Подтвердите email'},403);
+      email=String(user.email||'').trim().toLowerCase();admin=email===OWNER;
+    }
     const url=new URL(req.url),resource=url.searchParams.get('resource');
     if(resource==='access'){
       if(!admin) return json({error:'Только администратор'},403);
@@ -40,7 +48,7 @@ Deno.serve(async(req)=>{
       return json({ok:true});
     }
     if(req.method!=='GET') return json({error:'Метод не поддерживается'},405);
-    const grants=admin?[]:await db(`personnel_access?select=restaurant,roles&email=eq.${encodeURIComponent(email)}`);
+    const grants=admin?[]:await db(saby?`personnel_saby_access?select=restaurant,roles&subject=eq.${encodeURIComponent(saby.subject)}`:`personnel_access?select=restaurant,roles&email=eq.${encodeURIComponent(email)}`);
     if(!admin&&!grants.length) return json({error:'Доступ не назначен. Обратитесь к администратору.'},403);
     const from=url.searchParams.get('from')||'',to=url.searchParams.get('to')||'';
     if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to)||from>to||(Date.parse(to)-Date.parse(from))/86400000>61) return json({error:'Выберите период до 62 дней'},400);

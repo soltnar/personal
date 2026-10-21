@@ -1,4 +1,4 @@
-const APP_VERSION = "4.0.3";
+const APP_VERSION = "4.1.0";
 let reportRows = null;
 let reportAdmin = false;
 const DAY_CUTOFF_SECONDS = 4 * 3600;
@@ -240,7 +240,8 @@ function setSabyApiStatus(message, kind = "") {
 
 function updateRevenueDbButtons() {
   if (!revenueDbLoginBtn || !revenueDbLogoutBtn || !loadRevenueDbBtn) return;
-  const signedIn = Boolean(revenueDbSession?.access_token);
+  const signedIn = Boolean(revenueDbSession?.access_token || (typeof getSabySession==='function'&&getSabySession()));
+  const sabyLogin=document.getElementById('sabyLoginBtn');if(sabyLogin)sabyLogin.hidden=signedIn;
   revenueDbLoginBtn.hidden = signedIn;
   revenueDbLogoutBtn.hidden = !signedIn;
   loadRevenueDbBtn.disabled = revenueDbLoading || !signedIn || !dateSelect.options.length;
@@ -270,7 +271,7 @@ async function initRevenueDatabase() {
   setSabyApiStatus(
     revenueDbSession
       ? "Доступ подтверждён. Выберите период и загрузите данные."
-      : "Для автоматической загрузки войдите через Google.",
+      : "Для просмотра отчёта войдите через Google или Saby.",
     revenueDbSession ? "success" : ""
   );
 
@@ -281,13 +282,15 @@ async function initRevenueDatabase() {
       setRevenueDbStatus("Вход выполнен. Можно подтянуть выручку из базы.", "success");
       setSabyApiStatus("Вход выполнен. Выберите период и нажмите «Показать отчёт из базы».", "success");
     } else {
-      setRevenueDbStatus("Для автозагрузки выручки войдите через Google.", "");
-      setSabyApiStatus("Для автоматической загрузки войдите через Google.", "");
+      if(typeof getSabySession==='function'&&getSabySession())return;
+      setRevenueDbStatus("Выручка доступна в отчёте после входа.", "");
+      setSabyApiStatus("Для просмотра отчёта войдите через Google или Saby.", "");
     }
   });
 }
 
 async function signInRevenueDatabase() {
+  sessionStorage.removeItem('personnelSabySession');
   if (!supabaseClient) return;
   revenueDbLoginBtn.disabled = true;
   setRevenueDbStatus("Открываем вход через Google…", "loading");
@@ -302,6 +305,7 @@ async function signInRevenueDatabase() {
 }
 
 async function signOutRevenueDatabase() {
+  if(typeof getSabySession==='function'&&getSabySession()){await signOutSaby();return;}
   if (!supabaseClient) return;
   await supabaseClient.auth.signOut();
   revenueDbSession = null;

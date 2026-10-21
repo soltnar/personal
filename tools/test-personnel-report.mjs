@@ -17,12 +17,15 @@ for(const key of ['barRevenue','revenue','hall','bar','delivery'])assert(!Object
 assert.deepEqual(Object.keys(restricted[0].details),['kitchen']);
 assert.equal(restrictRows(rows,[],false).length,0);
 assert.equal(restrictRows(rows,[{restaurant:'Другое предприятие',roles:['kitchen']}],false).length,0);
-let handler,email='staff@example.org',access=grants;
+let handler,email='staff@example.org',access=grants,sabyEnabled=false;
 globalThis.Deno={env:{get:key=>key==='SUPABASE_URL'?'https://test.invalid':'test-key'},serve:callback=>{handler=callback;}};
 globalThis.fetch=async(url)=>{
   const path=new URL(url).pathname;
   let body;
-  if(path==='/auth/v1/user')body={email,email_confirmed_at:'2026-01-01'};
+  if(path.includes('personnel_saby_sessions'))body=[{subject:'456:123'}];
+  else if(path.includes('personnel_saby_users'))body=sabyEnabled?[{subject:'456:123',display_name:'Saby сотрудник'}]:[];
+  else if(path.includes('personnel_saby_access'))body=grants;
+  else if(path==='/auth/v1/user')body={email,email_confirmed_at:'2026-01-01'};
   else if(path.includes('personnel_access'))body=access;
   else if(path.includes('attendance_daily_cache'))body=days;
   else if(path.includes('revenue_entries'))body=sales;
@@ -38,4 +41,10 @@ assert.equal(response.status,200);
 const report=await response.json();assert.equal(report.rows.length,1);assert(!JSON.stringify(report).includes('barRevenue'));
 access=[];assert.equal((await handler(request('?from=2026-10-14&to=2026-10-14'))).status,403);
 email='soltnar@gmail.com';assert.equal((await handler(request('?from=2026-10-14&to=2026-10-14'))).status,200);
+const sabyRequest=()=>new Request('https://test.invalid/personnel-report?from=2026-10-14&to=2026-10-14',{headers:{authorization:'Bearer ps_test'}});
+assert.equal((await handler(sabyRequest())).status,403);
+sabyEnabled=true;
+const sabyResponse=await handler(sabyRequest());assert.equal(sabyResponse.status,200);
+const sabyReport=await sabyResponse.json();assert.equal(sabyReport.admin,false);assert(!JSON.stringify(sabyReport).includes('barRevenue'));
+sabyEnabled=false;assert.equal((await handler(sabyRequest())).status,403);
 console.log('PASS: category revenue, shift accounting, role and restaurant isolation, default deny, authentication, admin-only grants');

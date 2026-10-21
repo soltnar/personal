@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Персонал" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=4.0.3" />
+  <link rel="stylesheet" href="styles.css?v=4.1.0" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -38,6 +38,8 @@
       </div>
       <div class="revenueDbActions">
         <button id="revenueDbLogin" type="button">Войти через Google</button>
+        <button id="sabyLoginBtn" type="button" class="secondaryBtn" disabled>Войти через Saby</button>
+        <span id="sabySetupHint" class="muted" hidden>Вход Saby появится после настройки администратором.</span>
         <button id="revenueDbLogout" type="button" class="secondaryBtn" hidden>Выйти</button>
         <button id="loadSabyBtn" type="button">Показать отчёт из базы</button>
         <button id="loadRevenueDbBtn" type="button" class="secondaryBtn" hidden>Обновить отчёт</button>
@@ -55,6 +57,22 @@
         <p class="hint">Отчёт читает сохранённые дни из базы. Предыдущие пять дней проверяются автоматически после 05:00 МСК. Для повторной загрузки выбранного периода используйте кнопку ниже.</p>
         <button id="forceSyncBtn" type="button" class="secondaryBtn" hidden>Обновить выбранный период из Saby</button>
         <p class="hint">Смена учитывается на точке последнего выхода за рабочие сутки 04:00–03:59. Записи без выхода требуют проверки.</p>
+      </div>
+    </details>
+    <details id="sabySettings" class="panel fallbackPanel" hidden>
+      <summary>Вход Saby: подключение и пользователи</summary>
+      <div class="fallbackContent">
+        <h3 class="panelTitle">Подключение интерактивной авторизации</h3>
+        <p class="hint">В настройках внешнего приложения Saby разрешите интерактивный OAuth-вход. Адрес возврата:</p>
+        <p><code>https://soltnar.github.io/personal/saby-callback.html</code></p>
+        <form id="sabyConfigForm" class="accessForm"><label>Client ID<input id="sabyClientId" required autocomplete="off"></label><label>Client secret<input id="sabyClientSecret" type="password" required autocomplete="new-password"></label><button type="submit">Сохранить параметры на сервере</button></form>
+        <p class="hint">Секрет не возвращается в браузер после сохранения. Не используйте сервисный ключ вместо client_secret.</p>
+        <h3 class="panelTitle">Пользователи Saby</h3><p class="hint">После первого входа сотрудник появляется здесь без доступа. Разрешите вход и назначьте предприятия и разделы. Google-права по email не переносятся автоматически.</p>
+        <button id="sabyUsersReload" class="secondaryBtn" type="button">Обновить пользователей и назначения</button>
+        <div id="sabyUserList"></div>
+        <form id="sabyGrantForm" class="accessForm"><label>Пользователь<select id="sabyAccessUser" required></select></label><label>Предприятие<select id="sabyAccessRestaurant" required></select></label><div class="accessRoles"><label><input type="checkbox" name="sabyRole" value="kitchen">Кухня</label><label><input type="checkbox" name="sabyRole" value="hall">Зал</label><label><input type="checkbox" name="sabyRole" value="bar">Бар</label><label><input type="checkbox" name="sabyRole" value="delivery">Доставка</label></div><button type="submit">Назначить доступ Saby</button></form>
+        <p class="hint">Список предприятий заполнится после открытия отчёта. Блокировка пользователя завершает его сеансы приложения.</p>
+        <p id="sabyAdminStatus" role="status"></p>
       </div>
     </details>
     <details id="accessSettings" class="panel fallbackPanel" hidden>
@@ -146,7 +164,8 @@
     <footer class="footer">Персонал и выручка · Источник данных: Saby <span>Рабочие сутки с 04:00</span></footer>
   </main>
 
-  <script src="script.js?v=4.0.3"></script>
-  <script src="report-ui.js?v=4.0.3"></script>
+  <script src="script.js?v=4.1.0"></script>
+  <script src="report-ui.js?v=4.1.0"></script>
+  <script src="saby-login.js?v=4.1.0"></script>
 </body>
 </html>

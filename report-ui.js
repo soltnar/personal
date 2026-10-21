@@ -2,16 +2,16 @@ const REPORT_API = `${SUPABASE_URL}/functions/v1/personnel-report`;
 const roleLabels = { kitchen:"Кухня", hall:"Зал", bar:"Бар", delivery:"Доставка" };
 const roleRevenue = {kitchen:"kitchenRevenue",bar:"barRevenue",hall:"revenue",delivery:"revenue"};
 async function reportRequest(path="", init={}) {
-  const {data}=await supabaseClient.auth.getSession();
-  if(!data.session) throw new Error("Войдите через Google");
-  const response=await fetch(REPORT_API+path,{...init,cache:"no-store",signal:AbortSignal.timeout(60000),headers:{Authorization:`Bearer ${data.session.access_token}`,apikey:SUPABASE_PUBLISHABLE_KEY,"Content-Type":"application/json"}});
+  const session=await getReportSession();
+  if(!session) throw new Error("Войдите через Google или Saby");
+  const response=await fetch(REPORT_API+path,{...init,cache:"no-store",signal:AbortSignal.timeout(60000),headers:{Authorization:`Bearer ${session.access_token}`,apikey:SUPABASE_PUBLISHABLE_KEY,"Content-Type":"application/json"}});
   const body=await response.json();
   if(!response.ok) throw new Error(body.error||"Не удалось получить данные");
   return body;
 }
 async function loadScopedReport() {
   if(!supabaseClient) return;
-  const startingSession=(await supabaseClient.auth.getSession()).data.session;
+  const startingSession=await getReportSession();
   const startingUser=startingSession?.user?.id;
   const from=sabyFromInput.value,to=sabyToInput.value;
   if(!from||!to||from>to) return setSabyApiStatus("Проверьте период","error");
@@ -19,7 +19,7 @@ async function loadScopedReport() {
   try {
     setSabyApiStatus("Читаем разрешённые данные из базы…","loading");
     const payload=await reportRequest(`?from=${from}&to=${to}`);
-    const currentUser=(await supabaseClient.auth.getSession()).data.session?.user?.id;
+    const currentUser=(await getReportSession())?.user?.id;
     if(!startingUser||currentUser!==startingUser) return;
     reportRows=payload.rows;reportAdmin=payload.admin;
     document.getElementById("accessSettings").hidden=!reportAdmin;
@@ -153,4 +153,4 @@ function exportReportCSV(rows){return reportExportData(rows).map(line=>line.map(
 function clearScopedSession(){reportRows=[];reportAdmin=false;lastResultRows=[];baseRecords=[];mappedRecords=[];revenueRows=[];staffRestaurantMap.clear();renderTable([]);fillMultiSelect(restaurantSelect,[]);document.getElementById('accessSettings').hidden=true;document.getElementById('forceSyncBtn').hidden=true;document.getElementById('accessList').replaceChildren();}
 // Clear financial/personnel data whenever a session changes, including logout.
 let scopedUserId=revenueDbSession?.user?.id||null;
-if(supabaseClient) supabaseClient.auth.onAuthStateChange((_event,session)=>{if((session?.user?.id||null)!==scopedUserId){clearScopedSession();scopedUserId=session?.user?.id||null;}});
+if(supabaseClient) supabaseClient.auth.onAuthStateChange((_event,session)=>{if(typeof getSabySession==='function'&&getSabySession())return;if((session?.user?.id||null)!==scopedUserId){clearScopedSession();scopedUserId=session?.user?.id||null;}document.getElementById('sabySettings').hidden=session?.user?.email?.toLowerCase()!=='soltnar@gmail.com';});
