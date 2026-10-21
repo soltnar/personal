@@ -1,4 +1,4 @@
-const APP_VERSION = "3.1.0";
+const APP_VERSION = "3.1.1";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -111,6 +111,9 @@ function canonicalRestaurantName(value) {
   const original = String(value || "").trim();
   const key = revenueNameKey(original);
   if (!key) return "";
+  if (key.includes("фабрик") && (key.includes("кухн") || key.includes("белинского"))) {
+    return "Фабрика кухни";
+  }
   if (key.includes("жюль верн") || key.includes("жюльверн") || key.includes("ударник")
     || (key.includes("ленина") && key.includes("64"))) {
     return "Ленина, 64 Ударник";
@@ -185,7 +188,7 @@ function isNonRestaurantDepartment(value) {
     || key === "подразделение не определено"
     || key === "основной зал"
     || key === "технический персонал"
-    || key.includes("фабрика")
+    || (key.includes("фабрика") && key !== "фабрика кухни")
     || key.includes("сотрудники сторонних организаций")
     || key.includes("сдача отчетности");
 }
@@ -1289,7 +1292,7 @@ function calculate(records) {
 
 function renderPeopleList(items) {
   if (!items.length) return `<div class="emptyList">Нет сотрудников</div>`;
-  return `<ul>${items.map((p) => `<li>${escapeHtml(p.person)} — ${formatShift(p.shift)}${p.hasConflict ? ' <span class="conflictBadge">конфликт ФИО</span>' : ''}</li>`).join("")}</ul>`;
+  return `<ul>${items.map((p) => `<li>${escapeHtml(p.person)} — ${formatShift(p.shift)}${p.hasConflict ? ' <span class="conflictBadge">требует проверки</span>' : ''}</li>`).join("")}</ul>`;
 }
 
 function buildDetailsHtml(row) {
@@ -1306,7 +1309,7 @@ function buildDetailsHtml(row) {
 function renderTable(rows) {
   document.getElementById("metricShifts").textContent = rows.length ? formatShift(rows.reduce((sum, row) => sum + row.total, 0)) : "—";
   document.getElementById("metricRevenue").textContent = rows.length ? `${formatMoney(rows.reduce((sum, row) => sum + row.revenue, 0))} ₽` : "—";
-  document.getElementById("metricRestaurants").textContent = rows.length ? new Set(rows.map((row) => row.restaurant)).size : "—";
+  document.getElementById("metricRestaurants").textContent = rows.length ? new Set(rows.map((row) => row.restaurant).filter((name) => name !== "Подразделение не определено")).size : "—";
   document.getElementById("metricDays").textContent = rows.length ? new Set(rows.map((row) => row.dateIso)).size : "—";
   tableBody.innerHTML = "";
 
@@ -1344,7 +1347,7 @@ function renderTable(rows) {
     tr.innerHTML = `
       <td><button class="detailBtn" id="${toggleId}" type="button">Показать</button></td>
       <td>${prettyDate(r.dateIso)}</td>
-      <td>${escapeHtml(r.restaurant)}${r.hasConflict ? ' <span class="conflictBadge">есть конфликт</span>' : ''}</td>
+      <td>${escapeHtml(r.restaurant)}${r.restaurant === "Фабрика кухни" ? ' <span class="productionBadge">производство</span>' : ''}${r.hasConflict ? ' <span class="conflictBadge">требует проверки</span>' : ''}</td>
       <td>${formatShift(r.kitchen)}</td>
       <td>${formatShift(r.hall)}</td>
       <td>${formatShift(r.delivery)}</td>

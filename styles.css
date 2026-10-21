@@ -9,6 +9,7 @@
 
 
 * { box-sizing: border-box; }
+.productionBadge { display:inline-block; margin-left:6px; padding:2px 7px; border-radius:6px; background:#edf1f8; color:#52657f; font-size:10px; font-weight:600; }
 
 body {
   margin: 0;
