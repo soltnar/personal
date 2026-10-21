@@ -1,4 +1,4 @@
-const APP_VERSION = "3.1.1";
+const APP_VERSION = "3.1.2";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -1145,6 +1145,13 @@ function rebuildMappedRecords(selectAllRestaurants = false) {
   mappingStats = { matched: 0, total: baseRecords.length };
 
   const exits = new Map();
+  const dayLocations = new Map();
+  baseRecords.filter((r) => r.automaticAttendance).forEach((r) => {
+    const key = `${r.dateIso}|${r.personId || r.personKey}`;
+    if (!dayLocations.has(key)) dayLocations.set(key, new Set());
+    const location = canonicalRestaurantName(r.restaurantFromGate);
+    dayLocations.get(key).add(location && !isNonRestaurantDepartment(location) ? location : "");
+  });
   baseRecords.filter((r) => r.automaticAttendance && r.direction === "Выход").forEach((r) => {
     const key = `${r.dateIso}|${r.personId || r.personKey}`;
     if (!exits.has(key) || exits.get(key).absSec < r.absSec) exits.set(key, r);
@@ -1153,15 +1160,18 @@ function rebuildMappedRecords(selectAllRestaurants = false) {
   mappedRecords = baseRecords.map((r) => {
     const lastExit = exits.get(`${r.dateIso}|${r.personId || r.personKey}`);
     const exitRestaurant = lastExit && canonicalRestaurantName(lastExit.restaurantFromGate);
+    const locations = dayLocations.get(`${r.dateIso}|${r.personId || r.personKey}`);
+    const singleLocation = !lastExit && locations?.size === 1 ? [...locations][0] : "";
     const mappedRestaurant = r.automaticAttendance
-      ? (exitRestaurant && !isNonRestaurantDepartment(exitRestaurant) ? exitRestaurant : "")
+      ? (exitRestaurant && !isNonRestaurantDepartment(exitRestaurant) ? exitRestaurant : singleLocation)
       : canonicalRestaurantName(staffRestaurantMap.get(r.personKey));
     if (mappedRestaurant) mappingStats.matched += 1;
 
     return {
       ...r,
       restaurant: mappedRestaurant || "Подразделение не определено",
-      hasConflict: r.automaticAttendance ? !mappedRestaurant : staffConflictKeys.has(r.personKey)
+      hasConflict: r.automaticAttendance ? !lastExit || !mappedRestaurant : staffConflictKeys.has(r.personKey),
+      reviewReason: r.automaticAttendance && !lastExit ? "нет отметки выхода" : ""
     };
   });
 
@@ -1233,6 +1243,7 @@ function calculate(records) {
         group: r.group,
         person: r.person,
         hasConflict: false,
+        reviewReason: r.reviewReason || "",
         events: []
       });
     }
@@ -1265,10 +1276,11 @@ function calculate(records) {
 
     const key = `${item.dateIso}||${item.restaurant}`;
     const row = restaurantDay.get(key);
-    if (item.group === "Кухня") row.details.kitchen.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
-    if (item.group === "Зал") row.details.hall.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
-    if (item.group === "Доставка") row.details.delivery.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
-    if (item.group === "Бар") row.details.bar.push({ person: item.person, shift: shiftValue, hasConflict: item.hasConflict });
+    const personDetails = { person: item.person, shift: shiftValue, hasConflict: item.hasConflict, reviewReason: item.reviewReason };
+    if (item.group === "Кухня") row.details.kitchen.push(personDetails);
+    if (item.group === "Зал") row.details.hall.push(personDetails);
+    if (item.group === "Доставка") row.details.delivery.push(personDetails);
+    if (item.group === "Бар") row.details.bar.push(personDetails);
 
     if (item.group === "Кухня") row.kitchen += shiftValue;
     if (item.group === "Зал") row.hall += shiftValue;
@@ -1292,7 +1304,7 @@ function calculate(records) {
 
 function renderPeopleList(items) {
   if (!items.length) return `<div class="emptyList">Нет сотрудников</div>`;
-  return `<ul>${items.map((p) => `<li>${escapeHtml(p.person)} — ${formatShift(p.shift)}${p.hasConflict ? ' <span class="conflictBadge">требует проверки</span>' : ''}</li>`).join("")}</ul>`;
+  return `<ul>${items.map((p) => `<li>${escapeHtml(p.person)} — ${formatShift(p.shift)}${p.hasConflict ? ` <span class="conflictBadge">${escapeHtml(p.reviewReason || "требует проверки")}</span>` : ''}</li>`).join("")}</ul>`;
 }
 
 function buildDetailsHtml(row) {
