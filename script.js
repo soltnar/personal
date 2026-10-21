@@ -1,4 +1,4 @@
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.1.0";
 const DAY_CUTOFF_SECONDS = 4 * 3600;
 
 const universalInput = document.getElementById("universalInput");
@@ -379,7 +379,9 @@ function prepareSabyData(rows, from, to, employees = []) {
       personKey,
       group,
       direction: Number(row.actionType) === 1 ? "Вход" : "Выход",
-      restaurantFromGate: String(row.address || "").trim() || "Не указан"
+      restaurantFromGate: canonicalRestaurantName([row.department, row.address, row.accessPoint].filter(Boolean).join(" ")),
+      personId: String(row.personId || ""),
+      automaticAttendance: true
     });
   });
 
@@ -411,11 +413,11 @@ function addDaysIso(dateIso, days) {
   return date.toISOString().slice(0, 10);
 }
 
-async function fetchSabyChunk(from, to, accessToken) {
+async function fetchSabyChunk(from, to, accessToken, syncBefore = "") {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), SABY_API_TIMEOUT_MS);
   try {
-    const response = await fetch(`${PERSONNEL_API_URL}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+    const response = await fetch(`${PERSONNEL_API_URL}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${syncBefore ? `&refresh=force&before=${encodeURIComponent(syncBefore)}` : ""}`, {
       method: "GET",
       cache: "no-store",
       signal: controller.signal,
@@ -464,7 +466,7 @@ async function fetchSabyEmployees(accessToken) {
   }
 }
 
-async function loadSabyFromApi() {
+async function loadSabyFromApi(options = {}) {
   if (sabyApiLoading || !supabaseClient) return;
   const from = sabyFromInput?.value || "";
   const to = sabyToInput?.value || "";
@@ -482,6 +484,7 @@ async function loadSabyFromApi() {
   }
 
   sabyApiLoading = true;
+  document.getElementById("forceSyncBtn").disabled = true;
   updateRevenueDbButtons();
   loadSabyBtn.classList.add("is-busy");
   loadSabyBtn.setAttribute("aria-busy", "true");
@@ -492,26 +495,21 @@ async function loadSabyFromApi() {
   try {
     // The official employee directory is independent from attendance. Load it
     // in parallel so a slow directory page cannot delay or break cache polling.
-    const employeesPromise = fetchSabyEmployees(revenueDbSession.access_token).catch(() => []);
+    const syncBefore = options.force === true ? new Date().toISOString() : "";
     while (Date.now() - startedAt < SABY_CACHE_WAIT_MS) {
-      const payload = await fetchSabyChunk(from, to, revenueDbSession.access_token);
+      const payload = await fetchSabyChunk(from, to, revenueDbSession.access_token, syncBefore);
       allRows = payload.rows;
       if (Array.isArray(payload.employees) && payload.employees.length) employees = payload.employees;
       const ready = payload.readyDates?.length || 0;
       const total = ready + (payload.pendingDates?.length || 0);
       if (payload.complete) break;
+      if (!syncBefore) throw new Error(`В базе отсутствуют или не готовы ${payload.pendingDates?.length || 0} дней: ${(payload.pendingDates || []).join(", ")}. Запустите синхронизацию в настройках`);
       const currentDate = payload.diagnostics?.syncingDate || payload.pendingDates?.[0] || "следующая дата";
       setSabyApiStatus(`Кэшируем проходную: готово ${ready} из ${total} дней. Сейчас загружается ${currentDate}…`, "loading");
       await new Promise((resolve) => setTimeout(resolve, SABY_CACHE_POLL_MS));
     }
 
-    const finalPayload = await fetchSabyChunk(from, to, revenueDbSession.access_token);
-    allRows = finalPayload.rows;
-    if (!finalPayload.complete) throw new Error(`не успели заполнить ${finalPayload.pendingDates?.length || 0} дней; готовые даты сохранены`);
-    employees = await Promise.race([
-      employeesPromise,
-      new Promise((resolve) => setTimeout(() => resolve([]), 60000))
-    ]);
+    if (Date.now() - startedAt >= SABY_CACHE_WAIT_MS) throw new Error("Синхронизация ещё не завершена. Готовые дни сохранены в базе");
 
     const prepared = prepareSabyData(allRows, from, to, employees);
     if (!prepared.attendance.length) throw new Error("За выбранный период не найдено событий проходной по учитываемым должностям");
@@ -520,14 +518,15 @@ async function loadSabyFromApi() {
     lastResultRows = calculate(mappedRecords);
     renderTable(lastResultRows);
     setSabyApiStatus(
-      `Готово за ${Math.max(1, Math.round((Date.now() - startedAt) / 1000))} сек.: ${allRows.length} событий проходной, ${employees.length} сотрудников. В расчёт вошло ${prepared.attendance.length}.`,
+      `Из базы за ${Math.max(1, Math.round((Date.now() - startedAt) / 1000))} сек.: ${allRows.length} событий. Смены распределены по последнему выходу за рабочие сутки.`,
       "success"
     );
     await loadRevenueFromDatabase({ silent: true, range: { from, to } });
   } catch (error) {
-    setSabyApiStatus(`Не удалось загрузить данные Saby: ${error?.message || "неизвестная ошибка"}. Доступна резервная загрузка Excel.`, "error");
+    setSabyApiStatus(`Отчёт не обновлён: ${error?.message || "неизвестная ошибка"}.`, "error");
   } finally {
     sabyApiLoading = false;
+    document.getElementById("forceSyncBtn").disabled = false;
     loadSabyBtn.classList.remove("is-busy");
     loadSabyBtn.removeAttribute("aria-busy");
     updateRevenueDbButtons();
@@ -1142,14 +1141,24 @@ async function processWorkbookFile(file) {
 function rebuildMappedRecords(selectAllRestaurants = false) {
   mappingStats = { matched: 0, total: baseRecords.length };
 
+  const exits = new Map();
+  baseRecords.filter((r) => r.automaticAttendance && r.direction === "Выход").forEach((r) => {
+    const key = `${r.dateIso}|${r.personId || r.personKey}`;
+    if (!exits.has(key) || exits.get(key).absSec < r.absSec) exits.set(key, r);
+  });
+
   mappedRecords = baseRecords.map((r) => {
-    const mappedRestaurant = canonicalRestaurantName(staffRestaurantMap.get(r.personKey));
+    const lastExit = exits.get(`${r.dateIso}|${r.personId || r.personKey}`);
+    const exitRestaurant = lastExit && canonicalRestaurantName(lastExit.restaurantFromGate);
+    const mappedRestaurant = r.automaticAttendance
+      ? (exitRestaurant && !isNonRestaurantDepartment(exitRestaurant) ? exitRestaurant : "")
+      : canonicalRestaurantName(staffRestaurantMap.get(r.personKey));
     if (mappedRestaurant) mappingStats.matched += 1;
 
     return {
       ...r,
       restaurant: mappedRestaurant || "Подразделение не определено",
-      hasConflict: staffConflictKeys.has(r.personKey)
+      hasConflict: r.automaticAttendance ? !mappedRestaurant : staffConflictKeys.has(r.personKey)
     };
   });
 
@@ -1213,7 +1222,7 @@ function calculate(records) {
   const personDay = new Map();
 
   filtered.forEach((r) => {
-    const key = `${r.dateIso}||${r.restaurant}||${r.group}||${r.person}`;
+    const key = `${r.dateIso}||${r.restaurant}||${r.group}||${r.personId || r.person}`;
     if (!personDay.has(key)) {
       personDay.set(key, {
         dateIso: r.dateIso,
@@ -1425,7 +1434,7 @@ function refreshStatus() {
   statusEl.textContent = `Записей проходной: ${baseRecords.length}.${staffPart}${revenuePart}`;
 }
 
-attendanceInput.addEventListener("change", async (e) => {
+attendanceInput?.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
   try {
@@ -1436,7 +1445,7 @@ attendanceInput.addEventListener("change", async (e) => {
   }
 });
 
-staffInput.addEventListener("change", async (e) => {
+staffInput?.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
   try {
@@ -1455,7 +1464,7 @@ staffInput.addEventListener("change", async (e) => {
   }
 });
 
-revenueInput.addEventListener("change", async (e) => {
+revenueInput?.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
   try {
@@ -1474,6 +1483,7 @@ if (revenueDbLoginBtn) revenueDbLoginBtn.addEventListener("click", signInRevenue
 if (revenueDbLogoutBtn) revenueDbLogoutBtn.addEventListener("click", signOutRevenueDatabase);
 if (loadRevenueDbBtn) loadRevenueDbBtn.addEventListener("click", () => loadRevenueFromDatabase());
 if (loadSabyBtn) loadSabyBtn.addEventListener("click", loadSabyFromApi);
+document.getElementById("forceSyncBtn")?.addEventListener("click", () => loadSabyFromApi({ force: true }));
 if (sabyFromInput) sabyFromInput.addEventListener("change", updateRevenueDbButtons);
 if (sabyToInput) sabyToInput.addEventListener("change", updateRevenueDbButtons);
 document.getElementById("restaurantSearch").addEventListener("input", renderRestaurantChecklist);
@@ -1515,7 +1525,7 @@ warehouseTypeControl.addEventListener("change", (event) => {
   summaryEl.textContent = "Состав складов выручки изменен. Нажмите «Рассчитать».";
 });
 
-universalInput.addEventListener("change", async (e) => {
+universalInput?.addEventListener("change", async (e) => {
   const files = Array.from(e.target.files || []);
   if (!files.length) return;
 

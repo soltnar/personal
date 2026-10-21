@@ -4,7 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Аналитика персонала по проходной</title>
-  <link rel="stylesheet" href="styles.css?v=3.0.0" />
+  <meta name="theme-color" content="#202936" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Персонал" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css?v=3.1.0" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -19,7 +23,7 @@
     <section class="panel autoDataPanel">
       <div>
         <p class="eyebrow">01 / ДАННЫЕ</p><h3 class="panelTitle">За какой период смотрим?</h3>
-        <p class="hint">Загрузите проходную и выручку из Saby.</p>
+        <p class="hint">Сохранённая проходная и выручка из базы. Без ожидания Saby.</p>
         <div class="presets" aria-label="Быстрый выбор периода"><button type="button" data-period="week">7 дней</button><button type="button" data-period="month">Этот месяц</button><button type="button" data-period="previous">Прошлый месяц</button></div>
       </div>
       <div class="periodFields">
@@ -33,7 +37,7 @@
       <div class="revenueDbActions">
         <button id="revenueDbLogin" type="button">Войти через Google</button>
         <button id="revenueDbLogout" type="button" class="secondaryBtn" hidden>Выйти</button>
-        <button id="loadSabyBtn" type="button">Загрузить данные из Saby</button>
+        <button id="loadSabyBtn" type="button">Показать отчёт из базы</button>
         <button id="loadRevenueDbBtn" type="button" class="secondaryBtn">Обновить только выручку</button>
       </div>
       <div class="statusGroup" aria-live="polite"><p id="sabyApiStatus" class="status">Проверяем доступ к Saby…</p>
@@ -43,40 +47,14 @@
     </section>
 
     <details class="panel fallbackPanel">
-      <summary>Резервная загрузка Excel</summary>
-      <div class="uploadGrid fallbackContent">
-        <div class="uploadWide">
-          <label class="label" for="universalInput">Общая загрузка файлов (автоопределение)</label>
-          <input id="universalInput" type="file" accept=".xlsx,.xls" multiple />
-          <p class="hint">Можно выбрать сразу 3 файла. Сайт сам определит: проходная, список сотрудников или выручки.</p>
-        </div>
-        <div>
-          <label class="label" for="attendanceInput">Файл проходной</label>
-          <input id="attendanceInput" type="file" accept=".xlsx,.xls" />
-        </div>
-        <div>
-          <label class="label" for="staffInput">Список сотрудников</label>
-          <input id="staffInput" type="file" accept=".xlsx,.xls" />
-        </div>
-        <div>
-          <label class="label" for="revenueInput">Файл выручек</label>
-          <input id="revenueInput" type="file" accept=".xlsx,.xls" />
-        </div>
-        <div class="uploadWide manualBlock">
-          <h3 class="panelTitle">Где взять файлы в Saby</h3>
-          <ol class="manualList">
-            <li>Файл проходной: <a href="https://online.saby.ru/page/work-schedule" target="_blank" rel="noopener noreferrer">открыть Графики работ</a> → <code>Пришел/ушел</code>, выбрать период и фильтр <code>Проходная</code>, нажать <code>Выгрузить</code>.</li>
-            <li>Список сотрудников: <a href="https://online.saby.ru/page/staff-list" target="_blank" rel="noopener noreferrer">открыть Сотрудники</a>, в фильтре выбрать <code>Работающие за нужный месяц</code>.</li>
-            <li>Перед выгрузкой списка убрать подразделения, которые дают дубли (<code>Сдача отчетности</code> и сторонние организации).</li>
-            <li>Далее <code>Меню → Выгрузить → Список сотрудников в Excel</code> (набор данных <code>Основная информация</code>).</li>
-          </ol>
-        </div>
+      <summary>Настройки и синхронизация</summary>
+      <div class="fallbackContent">
+        <h3 class="panelTitle">Обновление проходной</h3>
+        <p class="hint">Отчёт читает сохранённые дни из базы. Предыдущие пять дней проверяются автоматически после 05:00 МСК. Для повторной загрузки выбранного периода используйте кнопку ниже.</p>
+        <button id="forceSyncBtn" type="button" class="secondaryBtn">Обновить выбранный период из Saby</button>
+        <p class="hint">Смена учитывается на точке последнего выхода за рабочие сутки 04:00–03:59. Записи без выхода требуют проверки.</p>
       </div>
     </details>
-
-    <section class="panel filtersPanel">
-      <div class="filterIntro">
-        <p class="eyebrow">02 / НАСТРОЙКИ ОТЧЁТА</p><h3 class="panelTitle">Что включить в расчёт</h3>
         <p class="hint">Выберите рестораны, состав выручки и группы сотрудников.</p>
       </div>
 
@@ -148,6 +126,6 @@
     <footer class="footer">Персонал и выручка · Источник данных: Saby <span>Рабочие сутки с 04:00</span></footer>
   </main>
 
-  <script src="script.js?v=3.0.0"></script>
+  <script src="script.js?v=3.1.0"></script>
 </body>
 </html>

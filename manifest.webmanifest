@@ -1,0 +1,10 @@
+{
+  "name": "Персонал и выручка ресторанов",
+  "short_name": "Персонал",
+  "lang": "ru",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f6fa",
+  "theme_color": "#202936"
+}

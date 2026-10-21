@@ -312,6 +312,7 @@ async function fetchAttendance(from: string, to: string, token: string) {
       dateTime: cleanText(row.DateTime),
       actionType: Number(row.ActionType),
       person,
+      personId: String(row.Person || ""),
       position: cleanText(row.Position),
       department: cleanText(row.DepartmentName) || [location.LocationName, location.Address, location.AccessPointName]
         .map(cleanText).filter(Boolean).join(" "),
@@ -347,15 +348,6 @@ async function syncCacheDates(workDates: string[]) {
       const workDayRows = attendance.rows
         .filter((row) => operationalDate(row.dateTime) === workDate)
         .map((row) => ({ ...row, cacheVersion: CACHE_FORMAT_VERSION }));
-      if (!workDayRows.length) {
-        await writeCache(workDate, {
-          status: "error",
-          rows: [],
-          error: "Saby вернул пустой рабочий день; дата будет повторена",
-          elapsed_ms: attendance.elapsedMs,
-        });
-        continue;
-      }
       await writeCache(workDate, {
         status: "ready",
         rows: workDayRows,
@@ -398,37 +390,41 @@ Deno.serve(async (req) => {
     const now = Date.now();
     const activeLoading = cached.some((entry) => entry.status === "loading"
       && now - new Date(entry.updated_at).getTime() < CACHE_STALE_MS);
-    const refreshCutoff = `${todayMoscow}T00:00:00Z`;
+    const forceBefore = refreshMode === "force" ? url.searchParams.get("before") || "" : "";
+    if (refreshMode === "force" && !Number.isFinite(Date.parse(forceBefore))) throw new Error("Не задан момент обновления");
+    const refreshCutoff = forceBefore || `${todayMoscow}T00:00:00Z`;
+    const maySync = cronRequest || refreshMode === "force";
     const isCurrentCacheEntry = (entry: typeof cached[number] | undefined) => Boolean(
       entry?.status === "ready"
       && Array.isArray(entry.rows)
-      && entry.rows.length > 0
       && entry.rows.every((row) => Number(row.cacheVersion) === CACHE_FORMAT_VERSION)
     );
     const nextMissing = requestedDates.find((date) => {
       const entry = byDate.get(date);
       if (!entry || entry.status === "error") return true;
       if (entry.status === "ready" && !isCurrentCacheEntry(entry)) return true;
-      if (refreshMode === "recent" && entry.status === "ready" && entry.updated_at < refreshCutoff) return true;
+      if ((refreshMode === "recent" || refreshMode === "force") && entry.status === "ready" && entry.updated_at < refreshCutoff) return true;
       return entry.status === "loading" && now - new Date(entry.updated_at).getTime() >= CACHE_STALE_MS;
     });
 
     let syncingDates: string[] = [];
-    if (!activeLoading && nextMissing) {
+    if (maySync && !activeLoading && nextMissing) {
       const firstIndex = requestedDates.indexOf(nextMissing);
       for (let index = firstIndex; index < requestedDates.length && syncingDates.length < CACHE_BATCH_DAYS; index += 1) {
         const date = requestedDates[index];
         const entry = byDate.get(date);
         if (entry && entry.status === "ready" && isCurrentCacheEntry(entry)
-          && !(refreshMode === "recent" && entry.updated_at < refreshCutoff)) break;
+          && !((refreshMode === "recent" || refreshMode === "force") && entry.updated_at < refreshCutoff)) break;
         syncingDates.push(date);
       }
-      await Promise.all(syncingDates.map((date) => writeCache(date, { status: "loading", rows: [], error: null, elapsed_ms: null })));
+      await Promise.all(syncingDates.map((date) => writeCache(date, { status: "loading", error: null, elapsed_ms: null })));
       EdgeRuntime.waitUntil(syncCacheDates(syncingDates));
     }
 
     const rows = cached.filter(isCurrentCacheEntry).flatMap((entry) => entry.rows || []);
-    const readyDates = cached.filter(isCurrentCacheEntry).map((entry) => entry.work_date);
+    const readyDates = cached.filter(isCurrentCacheEntry)
+      .filter((entry) => refreshMode !== "force" || entry.updated_at >= refreshCutoff)
+      .map((entry) => entry.work_date);
     const pendingDates = requestedDates.filter((date) => !readyDates.includes(date));
     const errors = cached.filter((entry) => entry.status === "error").map((entry) => ({ date: entry.work_date, error: entry.error }));
     return json({
