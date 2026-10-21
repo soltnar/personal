@@ -1170,7 +1170,7 @@ function rebuildMappedRecords(selectAllRestaurants = false) {
   // full restaurant list available even when a location has no gate events.
   const restaurants = [
     ...new Set([
-      ...mappedRecords.map((r) => r.restaurant).filter((name) => !isNonRestaurantDepartment(name)),
+      ...mappedRecords.map((r) => r.restaurant).filter((name) => name === "Подразделение не определено" || !isNonRestaurantDepartment(name)),
       ...revenueRows.map((r) => r.restaurant)
     ])
   ].sort((a, b) => a.localeCompare(b, "ru"));
