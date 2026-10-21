@@ -6,6 +6,11 @@ const sales=[{sale_date:'2026-10-14',restaurant:'Самурай, Белинск�
 const rows=summarizeAttendance(days,sales);
 assert.equal(rows[0].kitchen,1);assert.equal(rows[0].revenue,140000);assert.equal(rows[0].kitchenRevenue,100000);assert.equal(rows[0].barRevenue,40000);
 const grants=[{restaurant:'Белинского, 61 Самурай',roles:['kitchen']}];
+const unified=summarizeAttendance([],['Самурай Доставка Геологов','Самурай Доставка Моторный пер 2к1','Самурай Доставка Коминтерна 166'].map(restaurant=>({restaurant,sale_date:'2026-10-14',revenue:1000})));
+assert.equal(unified.length,3);
+assert(unified.every(r=>r.kitchenRevenue===1000&&r.revenue===1000&&r.barRevenue===null&&r.kitchenRevenueSource==='unified'));
+assert.equal(unified.find(r=>r.restaurant.includes('Кварц')).restaurant,'Кварц, Гагарина, 224А');
+assert.equal(restrictRows(unified,[{restaurant:'Геологов 7А Самурай',roles:['kitchen']}],false).length,1);
 const restricted=restrictRows(rows,grants,false);
 assert.equal(restricted[0].kitchenRevenue,100000);
 for(const key of ['barRevenue','revenue','hall','bar','delivery'])assert(!Object.hasOwn(restricted[0],key));

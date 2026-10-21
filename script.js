@@ -1,4 +1,4 @@
-const APP_VERSION = "4.0.2";
+const APP_VERSION = "4.0.3";
 let reportRows = null;
 let reportAdmin = false;
 const DAY_CUTOFF_SECONDS = 4 * 3600;
@@ -135,8 +135,8 @@ function canonicalRestaurantName(value) {
   if (key.includes("циолковского") && key.includes("19")) {
     return "Циолковского, 19А Самурай";
   }
-  if (key.includes("геологов") && key.includes("7")) {
-    return "Геологов 7А Самурай";
+  if (key.includes("геологов") || key.includes("кварц") || (key.includes("гагарина") && key.includes("224"))) {
+    return "Кварц, Гагарина, 224А";
   }
   if (key.includes("ошар") || key.includes("ресторан 19") || key.includes("ресторан xix")) {
     return "Ошарская, 8А 19";

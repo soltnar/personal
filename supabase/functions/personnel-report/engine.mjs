@@ -41,8 +41,8 @@ function canonicalRestaurantName(value) {
   if (key.includes("циолковского") && key.includes("19")) {
     return "Циолковского, 19А Самурай";
   }
-  if (key.includes("геологов") && key.includes("7")) {
-    return "Геологов 7А Самурай";
+  if (key.includes("геологов") || key.includes("кварц") || (key.includes("гагарина") && key.includes("224"))) {
+    return "Кварц, Гагарина, 224А";
   }
   if (key.includes("ошар") || key.includes("ресторан 19") || key.includes("ресторан xix")) {
     return "Ошарская, 8А 19";
@@ -257,7 +257,7 @@ export function summarizeAttendance(days, revenues) {
   const result = new Map();
   const get = (dateIso,restaurant) => {
     const key = dateIso+"|"+restaurant;
-    if (!result.has(key)) result.set(key,{dateIso,restaurant,kitchen:0,hall:0,delivery:0,bar:0,total:0,revenue:null,kitchenRevenue:null,barRevenue:null,hasConflict:false,details:{kitchen:[],hall:[],delivery:[],bar:[]}});
+    if (!result.has(key)) result.set(key,{dateIso,restaurant,kitchen:0,hall:0,delivery:0,bar:0,total:0,revenue:null,kitchenRevenue:null,barRevenue:null,unifiedRevenue:null,kitchenRevenueSource:"kitchen",hasConflict:false,details:{kitchen:[],hall:[],delivery:[],bar:[]}});
     return result.get(key);
   };
   for (const day of days) {
@@ -299,10 +299,16 @@ export function summarizeAttendance(days, revenues) {
     const kind = getRevenueWarehouseKind(sale.restaurant);
     if (kind==="kitchen") row.kitchenRevenue=(row.kitchenRevenue??0)+value;
     if (kind==="bar") row.barRevenue=(row.barRevenue??0)+value;
+    if (kind==="single") row.unifiedRevenue=(row.unifiedRevenue??0)+value;
+  }
+  const unifiedKitchen=new Set(["Кварц, Гагарина, 224А","Моторный, 2/1 доставка Самурай","Коминтерна 166 CALL CENTRE"]);
+  for(const row of result.values()) if(unifiedKitchen.has(row.restaurant)&&row.kitchenRevenue===null&&Number.isFinite(row.unifiedRevenue)){
+    row.kitchenRevenue=row.unifiedRevenue;row.kitchenRevenueSource="unified";
   }
   return [...result.values()];
 }
 export function restrictRows(rows, grants, admin) {
+  grants=grants.map(g=>({...g,restaurant:canonicalRestaurantName(g.restaurant)}));
   return rows.filter(row=>admin || grants.some(g=>g.restaurant===row.restaurant)).map(row=>{
     const allowedRoles=admin?roleKeys:grants.filter(g=>g.restaurant===row.restaurant).flatMap(g=>g.roles);
     const copy={dateIso:row.dateIso,restaurant:row.restaurant,allowedRoles,details:{},total:0,hasConflict:false};
@@ -310,7 +316,7 @@ export function restrictRows(rows, grants, admin) {
       copy[key]=row[key]; copy.total+=row[key]; copy.details[key]=row.details[key];
       copy.hasConflict ||= row.details[key].some(p=>p.hasConflict);
     }
-    if(allowedRoles.includes("kitchen")) copy.kitchenRevenue=row.kitchenRevenue;
+    if(allowedRoles.includes("kitchen")) {copy.kitchenRevenue=row.kitchenRevenue;copy.kitchenRevenueSource=row.kitchenRevenueSource;}
     if(allowedRoles.includes("bar")) copy.barRevenue=row.barRevenue;
     if(allowedRoles.includes("hall")||allowedRoles.includes("delivery")) copy.revenue=row.revenue;
     return copy;

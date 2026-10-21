@@ -63,6 +63,7 @@ function calculateScopedRows() {
   for(const row of daily){
     if(!map.has(row.restaurant)) map.set(row.restaurant,{...row,dateIso:"",dailyRows:[],details:{kitchen:[],hall:[],bar:[],delivery:[]},coverage:Object.fromEntries(Object.keys(roleLabels).map(k=>[k,{revenue:0,shifts:0,covered:0,missing:0,missingShifts:0}])),kitchen:row.kitchen===null?null:0,hall:row.hall===null?null:0,bar:row.bar===null?null:0,delivery:row.delivery===null?null:0,revenue:null,kitchenRevenue:null,barRevenue:null,total:0});
     const target=map.get(row.restaurant);target.total+=row.total;target.hasConflict ||= row.hasConflict;
+    if(row.kitchenRevenueSource==='unified')target.kitchenRevenueSource='unified';
     target.dailyRows.push(row);
     for(const role of Object.keys(roleLabels)){if(Number.isFinite(row[role]))target[role]+=row[role];target.details[role].push(...(row.details[role]||[]).map(p=>({...p,dateIso:row.dateIso})));}
     for(const field of ['revenue','kitchenRevenue','barRevenue']) if(Number.isFinite(row[field])) target[field]=(target[field]??0)+row[field];
@@ -82,7 +83,7 @@ function productivitySample(row,role){
 function roleMetricsHtml(row){
   return `<div class="dayMetrics">${Object.entries(roleLabels).filter(([role,label])=>getCheckedGroups().includes(label)&&row.allowedRoles?.includes(role)).map(([role,label])=>{
     const sample=row.coverage?.[role]||productivitySample(row,role),revenue=row[roleRevenue[role]];
-    return `<article><h4>${label}</h4><dl><div><dt>${role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':'Общая выручка'}</dt><dd>${Number.isFinite(revenue)?formatMoney(revenue)+' ₽':'нет данных'}</dd></div><div><dt>Смены</dt><dd>${formatShift(row[role])}</dd></div><div><dt>Выработка</dt><dd>${formatProductivity(row,role)}</dd></div></dl>${sample.missing?`<p class="coverageWarning">Без выручки: ${sample.missing} предприятие-дней / ${formatShift(sample.missingShifts)} смен. В расчёте: ${formatShift(sample.shifts)} смен.</p>`:''}</article>`;
+    return `<article><h4>${label}</h4><dl><div><dt>${role==='kitchen'?(row.kitchenRevenueSource==='unified'?'Выручка единого склада':'Выручка кухни'):role==='bar'?'Выручка бара':'Общая выручка'}</dt><dd>${Number.isFinite(revenue)?formatMoney(revenue)+' ₽':'нет данных'}</dd></div><div><dt>Смены</dt><dd>${formatShift(row[role])}</dd></div><div><dt>Выработка</dt><dd>${formatProductivity(row,role)}</dd></div></dl>${sample.missing?`<p class="coverageWarning">Без выручки: ${sample.missing} предприятие-дней / ${formatShift(sample.missingShifts)} смен. В расчёте: ${formatShift(sample.shifts)} смен.</p>`:''}</article>`;
   }).join('')}</div>`;
 }
 function renderGaps(rows){
