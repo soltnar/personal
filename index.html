@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Персонал" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=4.0.1" />
+  <link rel="stylesheet" href="styles.css?v=4.0.2" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -120,6 +120,7 @@
       <div class="resultsHeading"><div><p class="eyebrow">03 / РЕЗУЛЬТАТЫ</p><h3 class="panelTitle">Смены по предприятиям</h3></div><span class="calculationNote">Сутки 04:00–03:59 · более 7 ч = 1 смена, до 7 ч = 0,5</span></div>
       <div class="metrics" id="metrics"><div><span>Всего смен</span><strong id="metricShifts">—</strong></div><div><span>Выручка</span><strong id="metricRevenue">—</strong></div><div><span>Предприятий в отчёте</span><strong id="metricRestaurants">—</strong></div><div><span>Дней в отчёте</span><strong id="metricDays">—</strong></div></div>
       <h3 class="panelTitle">Выработка по выбранным предприятиям</h3><p class="hint">₽ на учитываемую смену (1 или 0,5). Сумма выручки / сумма смен за дни с данными. * — есть пропуски; состав расчёта и причины видны при раскрытии предприятия.</p><div id="productivity" class="productivityGrid"></div>
+      <details id="reportGaps" class="reportGaps"><summary>Пропуски выручки</summary></details>
       <div id="summary" class="summary">Нет данных для отображения.</div>
       <div class="tableWrap">
         <table id="resultTable">
@@ -145,7 +146,7 @@
     <footer class="footer">Персонал и выручка · Источник данных: Saby <span>Рабочие сутки с 04:00</span></footer>
   </main>
 
-  <script src="script.js?v=4.0.1"></script>
-  <script src="report-ui.js?v=4.0.1"></script>
+  <script src="script.js?v=4.0.2"></script>
+  <script src="report-ui.js?v=4.0.2"></script>
 </body>
 </html>

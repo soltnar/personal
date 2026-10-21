@@ -1,4 +1,4 @@
-const APP_VERSION = "4.0.1";
+const APP_VERSION = "4.0.2";
 let reportRows = null;
 let reportAdmin = false;
 const DAY_CUTOFF_SECONDS = 4 * 3600;
@@ -1315,12 +1315,13 @@ function renderPeopleList(items) {
 }
 
 function buildDetailsHtml(row) {
-  if(row.dailyRows) return row.dailyRows.slice().sort((a,b)=>a.dateIso.localeCompare(b.dateIso)).map(day=>`<section class="dayBreakdown"><h3>${prettyDate(day.dateIso)} <small>${formatShift(day.total)} смен</small></h3>${buildDetailsHtml(day)}</section>`).join("");
+  if(row.dailyRows) return `<h3>Итого по разделам за период</h3>${roleMetricsHtml(row)}`+row.dailyRows.slice().sort((a,b)=>a.dateIso.localeCompare(b.dateIso)).map(day=>`<section class="dayBreakdown" data-day="${day.dateIso}"><h3>${prettyDate(day.dateIso)} <small>${formatShift(day.total)} смен</small></h3>${buildDetailsHtml(day)}</section>`).join("");
   const issues=Object.values(row.details).flat().filter(p=>p.hasConflict);
   const issueSummary=issues.length?`<p class="reviewSummary">Проверить ${issues.length} записей в выбранных разделах: ${escapeHtml([...new Set(issues.map(p=>p.reviewReason||"требует проверки"))].join(", "))}. Сотрудники отмечены ниже.</p>`:"";
   const missing=Object.entries(row.coverage||{}).filter(([role,sample])=>sample.missing>0&&getCheckedGroups().includes(roleLabels[role])).map(([role])=>roleLabels[role]);
   return `
     ${issueSummary}
+    ${roleMetricsHtml(row)}
     ${missing.length?`<p class="coverageWarning">Нет выручки для расчёта: ${escapeHtml(missing.join(", "))}. Этот день исключён из выработки соответствующего раздела.</p>`:""}
     <div class="detailsWrap">
       <div class="detailsCol"><h4>Кухня (${formatShift(row.kitchen)})</h4>${renderPeopleList(row.details.kitchen)}</div>
@@ -1341,6 +1342,7 @@ function renderTable(rows) {
   document.getElementById("metricDays").textContent = rows.length ? new Set(rows.map((row) => row.dateIso)).size : "—";
   renderProductivity(rows);
   tableBody.innerHTML = "";
+  renderGaps(rows);
 
   if (!rows.length) {
     summaryEl.textContent = "По выбранным фильтрам данных нет.";
@@ -1365,6 +1367,8 @@ function renderTable(rows) {
     const tr = document.createElement("tr");
     const detailsTr = document.createElement("tr");
     detailsTr.className = "detailsRow";
+    detailsTr.dataset.restaurant=r.restaurant;
+    detailsTr.dataset.date=r.dateIso||"";
     detailsTr.style.display = "none";
 
     const detailsCell = document.createElement("td");

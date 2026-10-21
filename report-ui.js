@@ -79,6 +79,43 @@ function productivitySample(row,role){
   const valid=Number.isFinite(revenue)&&shifts>0;
   return {revenue:valid?revenue:0,shifts:valid?shifts:0,covered:valid?1:0,missing:shifts>0&&!Number.isFinite(revenue)?1:0,missingShifts:shifts>0&&!Number.isFinite(revenue)?shifts:0};
 }
+function roleMetricsHtml(row){
+  return `<div class="dayMetrics">${Object.entries(roleLabels).filter(([role,label])=>getCheckedGroups().includes(label)&&row.allowedRoles?.includes(role)).map(([role,label])=>{
+    const sample=row.coverage?.[role]||productivitySample(row,role),revenue=row[roleRevenue[role]];
+    return `<article><h4>${label}</h4><dl><div><dt>${role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':'Общая выручка'}</dt><dd>${Number.isFinite(revenue)?formatMoney(revenue)+' ₽':'нет данных'}</dd></div><div><dt>Смены</dt><dd>${formatShift(row[role])}</dd></div><div><dt>Выработка</dt><dd>${formatProductivity(row,role)}</dd></div></dl>${sample.missing?`<p class="coverageWarning">Без выручки: ${sample.missing} предприятие-дней / ${formatShift(sample.missingShifts)} смен. В расчёте: ${formatShift(sample.shifts)} смен.</p>`:''}</article>`;
+  }).join('')}</div>`;
+}
+function renderGaps(rows){
+  const container=document.getElementById('reportGaps');if(!container)return;
+  container.replaceChildren();
+  const daily=rows.flatMap(r=>r.dailyRows||[r]);
+  const gaps=[];
+  for(const row of daily)for(const [role,label] of Object.entries(roleLabels)){
+    if(!row.allowedRoles?.includes(role)||!getCheckedGroups().includes(label))continue;
+    const sample=row.coverage?.[role]||productivitySample(row,role);
+    if(sample.missing)gaps.push({row,role,label,shifts:sample.missingShifts});
+  }
+  const heading=document.createElement('summary');heading.textContent=`Пропуски выручки — ${gaps.length} записей. Показать предприятия и даты`;container.append(heading);
+  if(!gaps.length){const p=document.createElement('p');p.textContent='Пропусков выручки в выбранных разделах со сменами нет.';container.append(p);return;}
+  const intro=document.createElement('p');intro.className='hint';intro.textContent='Эти дни не вошли в выработку соответствующей группы. «Открыть день» покажет смены и сотрудников.';container.append(intro);
+  const list=document.createElement('div');list.className='gapList';
+  gaps.sort((a,b)=>a.row.restaurant.localeCompare(b.row.restaurant,'ru')||a.row.dateIso.localeCompare(b.row.dateIso));
+  for(const gap of gaps){
+    const item=document.createElement('article');
+    const content=document.createElement('div');
+    const name=document.createElement('strong');name.textContent=`${gap.row.restaurant} · ${prettyDate(gap.row.dateIso)} · ${gap.label}`;
+    const reason=document.createElement('p');reason.textContent=`${formatShift(gap.shifts)} смен · ${gap.row.restaurant==='Фабрика кухни'?'У производственного предприятия нет собственной выручки':gap.role==='kitchen'?'Нет строки выручки кухни':gap.role==='bar'?'Нет строки выручки бара':'Нет общей выручки за день'}`;
+    content.append(name,reason);const button=document.createElement('button');button.type='button';button.className='secondaryBtn';button.textContent='Открыть день';
+    button.onclick=()=>{
+      const details=[...tableBody.querySelectorAll('.detailsRow')].find(el=>el.dataset.restaurant===gap.row.restaurant&&(!el.dataset.date||el.dataset.date===gap.row.dateIso));
+      if(!details)return;details.style.display='';details.previousElementSibling.querySelector('.detailBtn').textContent='Скрыть';
+      const target=[...details.querySelectorAll('[data-day]')].find(el=>el.dataset.day===gap.row.dateIso)||details;
+      target.scrollIntoView({behavior:'smooth',block:'start'});target.classList.add('gapHighlight');setTimeout(()=>target.classList.remove('gapHighlight'),2500);
+    };
+    item.append(content,button);list.append(item);
+  }
+  container.append(list);
+}
 function renderProductivity(rows) {
   const container=document.getElementById('productivity');if(!container)return;
   container.replaceChildren();
@@ -90,6 +127,7 @@ function renderProductivity(rows) {
     eligible.forEach(r=>{const sample=r.coverage?.[role]||productivitySample(r,role);for(const key of Object.keys(totals))totals[key]+=sample[key];});
     const card=document.createElement('article');card.innerHTML=`<span>${label}</span><strong>${totals.shifts>0?formatMoney(totals.revenue/totals.shifts)+" ₽":"—"}</strong><small>${role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':'Общая выручка'} / смены ${label.toLowerCase()}</small><p>В расчёте: ${formatShift(totals.shifts)} смен · ${formatMoney(totals.revenue)} ₽</p>${totals.missing?`<p class="coverageWarning">Не включено: ${totals.missing} предприятие-дней, ${formatShift(totals.missingShifts)} смен без выручки.</p>`:''}`;
     container.append(card);
+    if(totals.missing){const button=document.createElement('button');button.className='textBtn';button.type='button';button.textContent='Где пропуски?';button.onclick=()=>{const gaps=document.getElementById('reportGaps');gaps.open=true;gaps.scrollIntoView({behavior:'smooth',block:'start'});};card.append(button);}
   }
   document.getElementById('metricDays').textContent=reportRows?.length?new Set(reportRows.map(r=>r.dateIso)).size:"—";
 }
