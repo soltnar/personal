@@ -108,6 +108,7 @@ function renderGaps(rows){
     const reason=document.createElement('p');reason.textContent=`${formatShift(gap.shifts)} смен · ${gap.row.restaurant==='Фабрика кухни'?'У производственного предприятия нет собственной выручки':gap.role==='kitchen'?'Нет строки выручки кухни':gap.role==='bar'?'Нет строки выручки бара':'Нет общей выручки за день'}`;
     content.append(name,reason);const button=document.createElement('button');button.type='button';button.className='secondaryBtn';button.textContent='Открыть день';
     button.onclick=()=>{
+      if(typeof openWorkspaceDay==='function'){openWorkspaceDay(gap.row.restaurant,gap.row.dateIso);return;}
       const details=[...tableBody.querySelectorAll('.detailsRow')].find(el=>el.dataset.restaurant===gap.row.restaurant&&(!el.dataset.date||el.dataset.date===gap.row.dateIso));
       if(!details)return;details.style.display='';details.previousElementSibling.querySelector('.detailBtn').textContent='Скрыть';
       const target=[...details.querySelectorAll('[data-day]')].find(el=>el.dataset.day===gap.row.dateIso)||details;
@@ -128,7 +129,7 @@ function renderProductivity(rows) {
     eligible.forEach(r=>{const sample=r.coverage?.[role]||productivitySample(r,role);for(const key of Object.keys(totals))totals[key]+=sample[key];});
     const card=document.createElement('article');card.innerHTML=`<span>${label}</span><strong>${totals.shifts>0?formatMoney(totals.revenue/totals.shifts)+" ₽":"—"}</strong><small>${role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':'Общая выручка'} / смены ${label.toLowerCase()}</small><p>В расчёте: ${formatShift(totals.shifts)} смен · ${formatMoney(totals.revenue)} ₽</p>${totals.missing?`<p class="coverageWarning">Не включено: ${totals.missing} предприятие-дней, ${formatShift(totals.missingShifts)} смен без выручки.</p>`:''}`;
     container.append(card);
-    if(totals.missing){const button=document.createElement('button');button.className='textBtn';button.type='button';button.textContent='Где пропуски?';button.onclick=()=>{const gaps=document.getElementById('reportGaps');gaps.open=true;gaps.scrollIntoView({behavior:'smooth',block:'start'});};card.append(button);}
+    if(totals.missing){const button=document.createElement('button');button.className='textBtn';button.type='button';button.textContent='Где пропуски?';button.onclick=()=>{if(typeof navigateWorkspace==='function'){navigateWorkspace('quality');showWorkspace('quality');}const gaps=document.getElementById('reportGaps');gaps.open=true;gaps.scrollIntoView({behavior:'smooth',block:'start'});};card.append(button);}
   }
   document.getElementById('metricDays').textContent=reportRows?.length?new Set(reportRows.map(r=>r.dateIso)).size:"—";
 }
@@ -153,4 +154,4 @@ function exportReportCSV(rows){return reportExportData(rows).map(line=>line.map(
 function clearScopedSession(){reportRows=[];reportAdmin=false;lastResultRows=[];baseRecords=[];mappedRecords=[];revenueRows=[];staffRestaurantMap.clear();renderTable([]);fillMultiSelect(restaurantSelect,[]);document.getElementById('accessSettings').hidden=true;document.getElementById('forceSyncBtn').hidden=true;document.getElementById('accessList').replaceChildren();}
 // Clear financial/personnel data whenever a session changes, including logout.
 let scopedUserId=revenueDbSession?.user?.id||null;
-if(supabaseClient) supabaseClient.auth.onAuthStateChange((_event,session)=>{if(typeof getSabySession==='function'&&getSabySession())return;if((session?.user?.id||null)!==scopedUserId){clearScopedSession();scopedUserId=session?.user?.id||null;}document.getElementById('sabySettings').hidden=session?.user?.email?.toLowerCase()!=='soltnar@gmail.com';});
+if(supabaseClient) supabaseClient.auth.onAuthStateChange((_event,session)=>{if(typeof getSabySession==='function'&&getSabySession())return;if((session?.user?.id||null)!==scopedUserId){clearScopedSession();scopedUserId=session?.user?.id||null;}if(typeof syncWorkspaceProfile==='function')syncWorkspaceProfile();});

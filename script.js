@@ -1,4 +1,4 @@
-const APP_VERSION = "4.1.0";
+const APP_VERSION = "4.2.0";
 let reportRows = null;
 let reportAdmin = false;
 const DAY_CUTOFF_SECONDS = 4 * 3600;
@@ -236,6 +236,7 @@ function setSabyApiStatus(message, kind = "") {
   if (!sabyApiStatusEl) return;
   sabyApiStatusEl.textContent = message;
   sabyApiStatusEl.className = `status${kind ? ` is-${kind}` : ""}`;
+  for(const id of ['accountStatus','syncStatus']){const el=document.getElementById(id);if(el){el.textContent=message;el.className=`status${kind ? ` is-${kind}` : ""}`;}}
 }
 
 function updateRevenueDbButtons() {
@@ -248,6 +249,7 @@ function updateRevenueDbButtons() {
   if (loadSabyBtn) {
     loadSabyBtn.disabled = sabyApiLoading || !signedIn || !sabyFromInput?.value || !sabyToInput?.value;
   }
+  if(typeof syncWorkspaceProfile==='function')syncWorkspaceProfile();
 }
 
 async function initRevenueDatabase() {
@@ -1347,6 +1349,7 @@ function renderTable(rows) {
   renderProductivity(rows);
   tableBody.innerHTML = "";
   renderGaps(rows);
+  if(typeof refreshWorkspaceReport==='function')refreshWorkspaceReport(rows);
 
   if (!rows.length) {
     summaryEl.textContent = "По выбранным фильтрам данных нет.";

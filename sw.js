@@ -1,5 +1,5 @@
-const SHELL='personnel-shell-v4.1.0';
-const FILES=['./','./index.html','./styles.css?v=4.1.0','./script.js?v=4.1.0','./report-ui.js?v=4.1.0','./saby-login.js?v=4.1.0','./manifest.webmanifest'];
+const SHELL='personnel-shell-v4.2.0';
+const FILES=['./','./index.html','./styles.css?v=4.2.0','./script.js?v=4.2.0','./report-ui.js?v=4.2.0','./saby-login.js?v=4.2.0','./workspace.js?v=4.2.0','./manifest.webmanifest'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(SHELL).then(cache=>cache.addAll(FILES)));self.skipWaiting();});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('personnel-shell-')&&k!==SHELL).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',event=>{

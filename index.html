@@ -9,23 +9,34 @@
   <meta name="apple-mobile-web-app-title" content="Персонал" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=4.1.0" />
+  <link rel="stylesheet" href="styles.css?v=4.2.0" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
 <body>
+  <a class="skipLink" href="#workspaceTitle">Перейти к содержимому</a>
+  <button id="navBackdrop" class="navBackdrop" type="button" aria-label="Закрыть меню" hidden></button>
+  <aside class="appSidebar" id="appSidebar" aria-label="Главное меню">
+    <a class="sidebarBrand" href="#overview"><span class="brandMark" aria-hidden="true">П</span><strong>Персонал<small>Операционная аналитика</small></strong></a>
+    <p class="navCaption">АНАЛИТИКА</p>
+    <nav class="sidebarNav" aria-label="Разделы приложения">
+      <a href="#overview" data-view="overview"><span aria-hidden="true">◫</span>Обзор</a>
+      <a href="#enterprises" data-view="enterprises"><span aria-hidden="true">▤</span>По предприятиям</a>
+      <a href="#quality" data-view="quality"><span aria-hidden="true">◎</span>Проверка данных<span id="qualityBadge" class="navBadge" hidden></span></a>
+      <p class="navCaption">УПРАВЛЕНИЕ</p>
+      <a href="#settings" data-view="settings"><span aria-hidden="true">⚙</span>Настройки</a>
+      <a href="#users" data-view="users" id="usersNav" hidden><span aria-hidden="true">♙</span>Пользователи и доступ</a>
+    </nav>
+    <div class="sidebarBottom"><span class="sourcePill"><i></i>Данные из базы · Saby</span><a class="sidebarProfile" href="#account" aria-label="Открыть мой профиль"><span class="profileAvatar" data-profile-avatar>?</span><span><strong data-profile-name>Гость</strong><small data-profile-caption>Войдите в аккаунт</small></span><span aria-hidden="true">›</span></a></div>
+  </aside>
   <main class="app">
-    <div class="titleRow">
-      <div><p class="eyebrow">ОПЕРАЦИОННАЯ АНАЛИТИКА</p><h1>Персонал и выручка</h1></div>
-      <span class="versionBadge">Версия: <span id="appVersion"></span></span>
-    </div>
-    <p class="subtitle">Все предприятия, смены и выручка — в одном отчёте.</p>
-    <button id="installApp" class="secondaryBtn installButton" type="button">Установить приложение</button>
+    <header class="workspaceHeader"><div class="headerLeft"><button id="menuToggle" class="menuToggle secondaryBtn" type="button" aria-label="Открыть меню" aria-controls="appSidebar" aria-expanded="false">☰</button><span class="breadcrumb">Персонал и выручка <span>/</span> <strong id="breadcrumbCurrent">Обзор</strong></span></div><a href="#account" class="headerProfile"><span class="profileAvatar smallAvatar" data-profile-avatar>?</span><span data-profile-name>Гость</span></a></header>
+    <div class="pageHeading"><div><p class="eyebrow" id="workspaceEyebrow">ПОКАЗАТЕЛИ СЕТИ</p><h1 id="workspaceTitle" tabindex="-1">Обзор</h1><p class="subtitle" id="workspaceDescription">Смены, выручка и выработка — всё главное за выбранный период.</p></div><span class="versionBadge">Версия <span id="appVersion"></span></span></div>
 
-    <section class="panel autoDataPanel">
+    <section class="panel autoDataPanel" data-pages="overview enterprises quality">
       <div>
-        <p class="eyebrow">01 / ДАННЫЕ</p><h3 class="panelTitle">За какой период смотрим?</h3>
-        <p class="hint">Сохранённая проходная и выручка из базы. Без ожидания Saby.</p>
+        <p class="eyebrow">ПЕРИОД ОТЧЁТА</p><h2 class="panelTitle">За какой период смотрим?</h2>
+        <p class="hint">Проходная и выручка из сохранённых данных.</p>
         <div class="presets" aria-label="Быстрый выбор периода"><button type="button" data-period="week">7 дней</button><button type="button" data-period="month">Этот месяц</button><button type="button" data-period="previous">Прошлый месяц</button></div>
       </div>
       <div class="periodFields">
@@ -37,11 +48,8 @@
         </label>
       </div>
       <div class="revenueDbActions">
-        <button id="revenueDbLogin" type="button">Войти через Google</button>
-        <button id="sabyLoginBtn" type="button" class="secondaryBtn" disabled>Войти через Saby</button>
-        <span id="sabySetupHint" class="muted" hidden>Вход Saby появится после настройки администратором.</span>
-        <button id="revenueDbLogout" type="button" class="secondaryBtn" hidden>Выйти</button>
         <button id="loadSabyBtn" type="button">Показать отчёт из базы</button>
+        <a class="buttonLink secondaryBtn" href="#account" id="reportSignInLink">Войти для просмотра</a>
         <button id="loadRevenueDbBtn" type="button" class="secondaryBtn" hidden>Обновить отчёт</button>
       </div>
       <div class="statusGroup" aria-live="polite"><p id="sabyApiStatus" class="status">Проверяем доступ к Saby…</p>
@@ -50,16 +58,27 @@
       <select id="dateSelect" multiple hidden aria-hidden="true"></select>
     </section>
 
-    <details class="panel fallbackPanel">
+    <section class="panel accountPanel" data-pages="account" hidden>
+      <div class="accountIdentity"><span class="profileAvatar largeAvatar" data-profile-avatar>?</span><div><p class="eyebrow">ВАШ АККАУНТ</p><h2 id="accountName">Вы не вошли</h2><p id="accountIdentifier" class="hint">Войдите, чтобы открыть доступные вам предприятия.</p><span class="accountRole" id="accountRole">Гость</span></div></div>
+      <dl class="accountFacts"><div><dt>Способ входа</dt><dd id="accountProvider">—</dd></div><div><dt>Доступ к отчёту</dt><dd id="accountScope">Данные закрыты до входа</dd></div></dl>
+      <div class="loginActions"><button id="revenueDbLogin" type="button">Войти через Google</button><button id="sabyLoginBtn" type="button" class="secondaryBtn" disabled>Войти через Saby</button><button id="revenueDbLogout" type="button" class="secondaryBtn" hidden>Выйти из аккаунта</button></div>
+      <p id="accountStatus" class="status" role="status"></p>
+      <p id="sabySetupHint" class="hint" hidden>Вход Saby появится после настройки администратором.</p>
+      <p class="hint">Права назначает администратор: отдельно предприятия и разделы. Сам по себе вход не открывает данные всей сети.</p>
+    </section>
+    <section class="panel settingsIntro" data-pages="settings" hidden><p class="eyebrow">ПРИЛОЖЕНИЕ</p><h2 class="panelTitle">Всегда под рукой</h2><p class="hint">Установите приложение на телефон или компьютер. Для отчётов нужен интернет.</p><button id="installApp" class="secondaryBtn" type="button">Установить приложение</button></section>
+    <details id="syncSettings" class="panel fallbackPanel" data-pages="settings" open hidden>
       <summary>Настройки и синхронизация</summary>
       <div class="fallbackContent">
         <h3 class="panelTitle">Обновление проходной</h3>
         <p class="hint">Отчёт читает сохранённые дни из базы. Предыдущие пять дней проверяются автоматически после 05:00 МСК. Для повторной загрузки выбранного периода используйте кнопку ниже.</p>
+        <div class="periodFields syncPeriod"><label class="label">С даты<input id="syncFrom" type="date"></label><label class="label">По дату<input id="syncTo" type="date"></label></div>
         <button id="forceSyncBtn" type="button" class="secondaryBtn" hidden>Обновить выбранный период из Saby</button>
+        <p id="syncAccessHint" class="hint">Принудительное обновление доступно владельцу через Google.</p><p id="syncStatus" class="status" role="status"></p>
         <p class="hint">Смена учитывается на точке последнего выхода за рабочие сутки 04:00–03:59. Записи без выхода требуют проверки.</p>
       </div>
     </details>
-    <details id="sabySettings" class="panel fallbackPanel" hidden>
+    <details id="sabySettings" class="panel fallbackPanel" data-pages="users" data-admin-only open hidden>
       <summary>Вход Saby: подключение и пользователи</summary>
       <div class="fallbackContent">
         <h3 class="panelTitle">Подключение интерактивной авторизации</h3>
@@ -75,7 +94,7 @@
         <p id="sabyAdminStatus" role="status"></p>
       </div>
     </details>
-    <details id="accessSettings" class="panel fallbackPanel" hidden>
+    <details id="accessSettings" class="panel fallbackPanel" data-pages="users" data-report-admin open hidden>
       <summary>Права доступа сотрудников</summary>
       <div class="fallbackContent">
         <p class="hint">Для каждого предприятия назначайте разделы отдельно. Без назначения сотрудник не получит данные. Вход — через Google с указанным email.</p>
@@ -88,8 +107,8 @@
         <p id="accessStatus" role="status"></p><div id="accessList"></div>
       </div>
     </details>
-    <section class="panel filtersPanel"><div class="filterIntro"><p class="eyebrow">02 / ФИЛЬТРЫ</p><h3 class="panelTitle">Предприятия и разделы</h3>
-        <p class="hint">Выберите предприятия и разделы. Выручка для каждой роли определяется автоматически.</p>
+    <section class="panel usersEmpty" id="usersEmpty" data-pages="users" hidden><h2 class="panelTitle">Управление доступом</h2><p class="hint">Раздел доступен владельцу через Google. Назначения Google заполняются после открытия отчёта.</p><a class="buttonLink secondaryBtn" href="#account">Мой аккаунт</a></section>
+    <details class="panel filtersPanel" data-pages="overview enterprises quality"><summary class="filtersSummary"><span><span class="eyebrow">ФИЛЬТРЫ</span><strong>Предприятия и разделы</strong></span><span id="filterSelectionLabel">Настроить выборку</span></summary><div class="filterIntro"><p class="hint">Выберите предприятия и разделы. Выбор применяется ко всем экранам аналитики.</p>
       </div>
 
       <div class="filtersLayout">
@@ -125,20 +144,25 @@
           </fieldset>
         </div>
       </div>
-    </section>
+    </details>
 
-    <section class="panel actions">
-      <button id="calcBtn">Рассчитать</button>
+    <section class="panel actions" data-pages="overview enterprises quality">
+      <button id="calcBtn">Применить фильтры</button>
       <button id="csvBtn" disabled>Скачать CSV</button>
       <button id="xlsxBtn" disabled>Скачать Excel</button>
     </section>
 
-    <section class="panel resultsPanel">
-      <div class="viewToolbar"><label>Группировка <select id="reportView"><option value="enterprise">По предприятиям за период</option><option value="daily">По дням</option></select></label></div>
-      <div class="resultsHeading"><div><p class="eyebrow">03 / РЕЗУЛЬТАТЫ</p><h3 class="panelTitle">Смены по предприятиям</h3></div><span class="calculationNote">Сутки 04:00–03:59 · более 7 ч = 1 смена, до 7 ч = 0,5</span></div>
+    <section class="panel overviewPanel" data-pages="overview">
+      <div class="resultsHeading"><div><p class="eyebrow">СВОДКА</p><h2 class="panelTitle">Главное за период</h2></div><span class="calculationNote">Сутки 04:00–03:59 · более 7 ч = 1 смена, до 7 ч = 0,5</span></div>
       <div class="metrics" id="metrics"><div><span>Всего смен</span><strong id="metricShifts">—</strong></div><div><span>Выручка</span><strong id="metricRevenue">—</strong></div><div><span>Предприятий в отчёте</span><strong id="metricRestaurants">—</strong></div><div><span>Дней в отчёте</span><strong id="metricDays">—</strong></div></div>
-      <h3 class="panelTitle">Выработка по выбранным предприятиям</h3><p class="hint">₽ на учитываемую смену (1 или 0,5). Сумма выручки / сумма смен за дни с данными. * — есть пропуски; состав расчёта и причины видны при раскрытии предприятия.</p><div id="productivity" class="productivityGrid"></div>
-      <details id="reportGaps" class="reportGaps"><summary>Пропуски выручки</summary></details>
+      <h2 class="panelTitle">Выработка по разделам</h2><p class="hint">Выручка / учитываемые смены за дни с данными. Пропуски не подменяются нулями.</p><div id="productivity" class="productivityGrid"></div>
+      <div id="overviewEmpty" class="workspaceEmpty"><span aria-hidden="true">◫</span><h3>Начнём с отчёта</h3><p>Выберите период выше и откройте отчёт из базы.<br>Здесь появятся показатели доступных вам предприятий.</p></div>
+      <div class="overviewLinks"><a href="#enterprises">Смотреть по предприятиям <span aria-hidden="true">→</span></a><a href="#quality">Проверить полноту данных <span aria-hidden="true">→</span></a></div>
+    </section>
+    <section class="panel qualityPanel" data-pages="quality" hidden><div class="resultsHeading"><div><p class="eyebrow">ПОЛНОТА И КАЧЕСТВО</p><h2 class="panelTitle">Что требует внимания</h2></div><span id="qualityScope" class="hint">По текущим фильтрам</span></div><p class="hint">Пропуски выручки и неоднозначные отметки сотрудников — разные причины. Здесь они показаны отдельно с переходом к нужному дню.</p><details id="reportGaps" class="reportGaps" open><summary>Пропуски выручки</summary><p class="hint">Сначала откройте отчёт за нужный период.</p></details><div id="attendanceReviews"></div></section>
+    <section class="panel resultsPanel" data-pages="enterprises" hidden>
+      <div class="viewToolbar"><label>Группировка <select id="reportView"><option value="enterprise">По предприятиям за период</option><option value="daily">По дням</option></select></label></div>
+      <div class="resultsHeading"><div><p class="eyebrow">ДЕТАЛЬНЫЙ ОТЧЁТ</p><h2 class="panelTitle">Смены и выработка предприятий</h2></div><span class="calculationNote">Раскройте предприятие, чтобы увидеть дни, группы и сотрудников.</span></div>
       <div id="summary" class="summary">Нет данных для отображения.</div>
       <div class="tableWrap">
         <table id="resultTable">
@@ -164,8 +188,9 @@
     <footer class="footer">Персонал и выручка · Источник данных: Saby <span>Рабочие сутки с 04:00</span></footer>
   </main>
 
-  <script src="script.js?v=4.1.0"></script>
-  <script src="report-ui.js?v=4.1.0"></script>
-  <script src="saby-login.js?v=4.1.0"></script>
+  <script src="script.js?v=4.2.0"></script>
+  <script src="report-ui.js?v=4.2.0"></script>
+  <script src="saby-login.js?v=4.2.0"></script>
+  <script src="workspace.js?v=4.2.0"></script>
 </body>
 </html>
