@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Персонал" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=4.2.2" />
+  <link rel="stylesheet" href="styles.css?v=4.2.3" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -90,17 +90,17 @@
         <button id="sabyUsersReload" class="secondaryBtn" type="button">Обновить пользователей и назначения</button>
         <div id="sabyUserList"></div>
         <form id="sabyGrantForm" class="accessForm"><label>Пользователь<select id="sabyAccessUser" required></select></label><label>Предприятие<select id="sabyAccessRestaurant" required></select></label><div class="accessRoles"><label><input type="checkbox" name="sabyRole" value="kitchen">Кухня</label><label><input type="checkbox" name="sabyRole" value="hall">Зал</label><label><input type="checkbox" name="sabyRole" value="bar">Бар</label><label><input type="checkbox" name="sabyRole" value="delivery">Доставка</label></div><button type="submit">Назначить доступ Saby</button></form>
-        <p class="hint">Список предприятий заполнится после открытия отчёта. Блокировка пользователя завершает его сеансы приложения.</p>
+        <p class="hint">Список предприятий берётся из справочника. Блокировка пользователя завершает его сеансы приложения.</p>
         <p id="sabyAdminStatus" role="status"></p>
       </div>
     </details>
-    <details id="accessSettings" class="panel fallbackPanel" data-pages="users" data-report-admin open hidden>
+    <details id="accessSettings" class="panel fallbackPanel" data-pages="users" data-admin-only open hidden>
       <summary>Права доступа сотрудников</summary>
       <div class="fallbackContent">
         <p class="hint">Для каждого предприятия назначайте разделы отдельно. Без назначения сотрудник не получит данные. Вход — через Google с указанным email.</p>
         <form id="accessForm" class="accessForm">
           <label>Email сотрудника<input id="accessEmail" type="email" required autocomplete="off"></label>
-          <label>Предприятие<select id="accessRestaurant" required></select></label>
+          <fieldset class="accessVenuePicker"><legend>Предприятия</legend><div class="accessVenueToolbar"><button id="accessAllVenues" type="button" class="textBtn">Все 18 ресторанов</button><button id="accessNoVenues" type="button" class="textBtn">Снять выбор</button><span id="accessVenueCount" class="hint">Не выбраны</span></div><div id="accessVenueChecklist" class="restaurantChecklist"></div><select id="accessRestaurant" multiple hidden aria-hidden="true"></select></fieldset>
           <div class="accessRoles"><label><input type="checkbox" name="accessRole" value="kitchen">Кухня</label><label><input type="checkbox" name="accessRole" value="hall">Зал</label><label><input type="checkbox" name="accessRole" value="bar">Бар</label><label><input type="checkbox" name="accessRole" value="delivery">Доставка</label></div>
           <button type="submit">Сохранить доступ</button><button id="accessReload" type="button" class="secondaryBtn">Показать назначения</button>
         </form>
@@ -188,9 +188,10 @@
     <footer class="footer">Персонал и выручка · Источник данных: Saby <span>Рабочие сутки с 04:00</span></footer>
   </main>
 
-  <script src="script.js?v=4.2.2"></script>
-  <script src="report-ui.js?v=4.2.2"></script>
-  <script src="saby-login.js?v=4.2.2"></script>
-  <script src="workspace.js?v=4.2.2"></script>
+  <script src="script.js?v=4.2.3"></script>
+  <script src="report-ui.js?v=4.2.3"></script>
+  <script src="saby-login.js?v=4.2.3"></script>
+  <script src="workspace.js?v=4.2.3"></script>
+  <script src="access-ui.js?v=4.2.3"></script>
 </body>
 </html>

@@ -32,8 +32,7 @@ async function loadScopedReport() {
       input.disabled=!reportAdmin&&!reportRows.some(r=>r.allowedRoles.includes(role));
       input.checked=!input.disabled;input.closest('label').hidden=input.disabled;
     });
-    const select=document.getElementById("accessRestaurant");select.replaceChildren();
-    restaurants.filter(r=>r!=="Подразделение не определено").forEach(r=>{const o=document.createElement('option');o.value=r;o.textContent=r;select.append(o);});
+    if(typeof renderAccessVenues==='function')renderAccessVenues();
     mappedRecords=[];baseRecords=[];
     lastResultRows=calculateScopedRows();renderTable(lastResultRows);
     setSabyApiStatus(`Отчёт из базы · ${from} — ${to} · ${payload.email}`,"success");
@@ -137,7 +136,7 @@ async function showAccess(){
   const status=document.getElementById('accessStatus');
   try{const data=await reportRequest('?resource=access');const list=document.getElementById('accessList');list.replaceChildren();for(const grant of data.grants){const item=document.createElement('div');item.className='grantRow';const text=document.createElement('span');text.textContent=`${grant.email} · ${grant.restaurant} · ${grant.roles.map(r=>roleLabels[r]).join(', ')}`;const remove=document.createElement('button');remove.textContent='Отозвать';remove.className='textBtn';remove.onclick=async()=>{try{await reportRequest('?resource=access',{method:'POST',body:JSON.stringify({...grant,roles:[]})});await showAccess();}catch(e){status.textContent=e.message;}};item.append(text,remove);list.append(item);}}catch(e){status.textContent=e.message;}
 }
-document.getElementById('accessForm').addEventListener('submit',async(event)=>{event.preventDefault();const status=document.getElementById('accessStatus');try{const roles=[...document.querySelectorAll('[name=accessRole]:checked')].map(i=>i.value);if(!roles.length)throw new Error('Выберите хотя бы один раздел');await reportRequest('?resource=access',{method:'POST',body:JSON.stringify({email:document.getElementById('accessEmail').value,restaurant:document.getElementById('accessRestaurant').value,roles})});status.textContent='Доступ сохранён';await showAccess();}catch(e){status.textContent=e.message;}});
+document.getElementById('accessForm').addEventListener('submit',async(event)=>{event.preventDefault();const status=document.getElementById('accessStatus'),button=event.submitter;try{const roles=[...document.querySelectorAll('[name=accessRole]:checked')].map(i=>i.value),restaurants=[...document.getElementById('accessRestaurant').selectedOptions].map(o=>o.value);if(!roles.length)throw new Error('Выберите хотя бы один раздел');if(!restaurants.length)throw new Error('Выберите хотя бы одно предприятие');if(button)button.disabled=true;await reportRequest('?resource=access',{method:'POST',body:JSON.stringify({email:document.getElementById('accessEmail').value.trim(),restaurants,roles})});status.textContent=`Доступ сохранён для ${restaurants.length} предприятий`;await showAccess();}catch(e){status.textContent=e.message;}finally{if(button)button.disabled=false;}});
 document.getElementById('accessReload').addEventListener('click',showAccess);
 document.getElementById('reportView').addEventListener('change',()=>{if(reportRows!==null){lastResultRows=calculateScopedRows();renderTable(lastResultRows);}});
 document.querySelectorAll('.groupCheck').forEach(i=>i.addEventListener('change',()=>{if(reportRows!==null){lastResultRows=calculateScopedRows();renderTable(lastResultRows);}}));

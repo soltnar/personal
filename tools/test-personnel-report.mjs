@@ -17,9 +17,10 @@ for(const key of ['barRevenue','revenue','hall','bar','delivery'])assert(!Object
 assert.deepEqual(Object.keys(restricted[0].details),['kitchen']);
 assert.equal(restrictRows(rows,[],false).length,0);
 assert.equal(restrictRows(rows,[{restaurant:'Другое предприятие',roles:['kitchen']}],false).length,0);
-let handler,email='staff@example.org',access=grants,sabyEnabled=false;
+let handler,email='staff@example.org',access=grants,sabyEnabled=false,lastGrantWrite;
 globalThis.Deno={env:{get:key=>key==='SUPABASE_URL'?'https://test.invalid':'test-key'},serve:callback=>{handler=callback;}};
-globalThis.fetch=async(url)=>{
+globalThis.fetch=async(url,init={})=>{
+  if(String(url).includes('/personnel_access')&&init.method==='POST')lastGrantWrite=JSON.parse(init.body);
   const path=new URL(url).pathname;
   let body;
   if(path.includes('personnel_saby_sessions'))body=[{subject:'456:123'}];
@@ -41,6 +42,9 @@ assert.equal(response.status,200);
 const report=await response.json();assert.equal(report.rows.length,1);assert(!JSON.stringify(report).includes('barRevenue'));
 access=[];assert.equal((await handler(request('?from=2026-10-14&to=2026-10-14'))).status,403);
 email='soltnar@gmail.com';assert.equal((await handler(request('?from=2026-10-14&to=2026-10-14'))).status,200);
+const bulk=()=>new Request('https://test.invalid/personnel-report?resource=access',{method:'POST',headers:{authorization:'Bearer test'},body:JSON.stringify({email:'samuray83denis@gmail.com',restaurants:['Б. Покровская, 59 Самурай','Б. Покровская, 63 Самурай','Фабрика кухни'],roles:['kitchen','hall','bar','delivery']})});
+assert.equal((await handler(bulk())).status,200);assert.equal(lastGrantWrite.length,3);assert(lastGrantWrite.every(row=>row.roles.length===4));
+email='staff@example.org';lastGrantWrite=null;assert.equal((await handler(bulk())).status,403);assert.equal(lastGrantWrite,null);
 const sabyRequest=()=>new Request('https://test.invalid/personnel-report?from=2026-10-14&to=2026-10-14',{headers:{authorization:'Bearer ps_test'}});
 assert.equal((await handler(sabyRequest())).status,403);
 sabyEnabled=true;

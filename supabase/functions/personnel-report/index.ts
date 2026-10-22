@@ -42,9 +42,10 @@ Deno.serve(async(req)=>{
       if(req.method!=='POST') return json({error:'Метод не поддерживается'},405);
       const body=await req.json();
       const target=String(body.email||'').trim().toLowerCase(),restaurant=String(body.restaurant||'').trim();
-      if(!/^[a-z0-9._+@-]+$/.test(target)||!target.includes('@')||restaurant.length<3||restaurant.length>200||!Array.isArray(body.roles)||body.roles.some((r:string)=>!roleKeys.includes(r))) return json({error:'Проверьте email, предприятие и разделы'},400);
+      const restaurants=body.restaurants===undefined?[restaurant]:body.restaurants;
+      if(!/^[a-z0-9._+@-]+$/.test(target)||!target.includes('@')||!Array.isArray(restaurants)||restaurants.length<1||restaurants.length>50||restaurants.some((r:unknown)=>typeof r!=='string'||r.trim().length<3||r.length>200)||!Array.isArray(body.roles)||body.roles.some((r:string)=>!roleKeys.includes(r))||(body.roles.length===0&&restaurants.length!==1)) return json({error:'Проверьте email, предприятия и разделы'},400);
       if(body.roles.length===0) await db(`personnel_access?email=eq.${encodeURIComponent(target)}&restaurant=eq.${encodeURIComponent(restaurant)}`,{method:'DELETE'});
-      else await db('personnel_access?on_conflict=email,restaurant',{method:'POST',body:JSON.stringify({email:target,restaurant,roles:[...new Set(body.roles)],updated_at:new Date().toISOString()})});
+      else await db('personnel_access?on_conflict=email,restaurant',{method:'POST',body:JSON.stringify([...new Set(restaurants.map((r:string)=>r.trim()))].map(name=>({email:target,restaurant:name,roles:[...new Set(body.roles)],updated_at:new Date().toISOString()})))});
       return json({ok:true});
     }
     if(req.method!=='GET') return json({error:'Метод не поддерживается'},405);

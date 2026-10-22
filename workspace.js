@@ -27,7 +27,7 @@ function showWorkspace(view, focus = false) {
       (!el.hasAttribute('data-report-admin') || (workspaceIsOwner() && reportAdmin));
     el.hidden = !el.dataset.pages.split(' ').includes(view) || !permitted;
   });
-  document.getElementById('usersEmpty').hidden = view !== 'users' || (workspaceIsOwner() && reportAdmin);
+  document.getElementById('usersEmpty').hidden = view !== 'users' || workspaceIsOwner();
   document.querySelectorAll('.sidebarNav [data-view]').forEach(link => {
     if(link.dataset.view === view) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
