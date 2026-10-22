@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { nextAutomaticDate, failureValues } from './schedule.mjs';
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -335,7 +336,7 @@ async function fetchAttendance(from: string, to: string, token: string) {
   return { rows: [...unique.values()], pagesLoaded, elapsedMs: Date.now() - startedAt };
 }
 
-async function syncCacheDates(workDates: string[]) {
+async function syncCacheDates(workDates: string[], previous: Awaited<ReturnType<typeof readCache>> = []) {
   const startedAt = Date.now();
   const firstDate = workDates[0];
   const lastDate = workDates[workDates.length - 1];
@@ -358,12 +359,12 @@ async function syncCacheDates(workDates: string[]) {
     console.log(JSON.stringify({ event: "attendance_cache_batch_ready", from: firstDate, to: lastDate, days: workDates.length, rows: attendance.rows.length, elapsedMs: Date.now() - startedAt }));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Ошибка Saby";
-    await Promise.all(workDates.map((workDate) => writeCache(workDate, {
-      status: "error",
-      rows: [],
-      error: message,
-      elapsed_ms: Date.now() - startedAt,
-    })));
+    await Promise.all(workDates.map((workDate) => {
+      const old=previous.find(entry=>entry.work_date===workDate);
+      const values=failureValues(old,message,Date.now()-startedAt);
+      if(old?.status==='ready')return cacheRequest(`?work_date=eq.${workDate}`,{method:'PATCH',body:JSON.stringify({...values,updated_at:old.updated_at})});
+      return writeCache(workDate,values);
+    }));
     console.error(JSON.stringify({ event: "attendance_cache_batch_error", from: firstDate, to: lastDate, error: message, elapsedMs: Date.now() - startedAt }));
   }
 }
@@ -381,8 +382,18 @@ Deno.serve(async (req) => {
       return json({ employees, generatedAt: new Date().toISOString() });
     }
     const todayMoscow = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    const from = refreshMode === "recent" ? addDays(todayMoscow, -5) : url.searchParams.get("from") || "";
-    const to = refreshMode === "recent" ? addDays(todayMoscow, -1) : url.searchParams.get("to") || "";
+    let automaticDate: string | null = null;
+    if(refreshMode==='recent') {
+      const entries=[];
+      for(let offset=0;;offset+=1000){
+        const page=await cacheRequest(`?select=work_date,status,updated_at&work_date=lt.${todayMoscow}&order=work_date.asc&limit=1000&offset=${offset}`);
+        entries.push(...page);if(page.length<1000)break;
+      }
+      automaticDate=nextAutomaticDate(entries,todayMoscow);
+      if(!automaticDate)return json({complete:true,skipped:true,reason:'Нет дней для автоматической загрузки сегодня'});
+    }
+    const from = automaticDate || url.searchParams.get("from") || "";
+    const to = automaticDate || url.searchParams.get("to") || "";
     validatePeriod(from, to);
     const requestedDates = datesInRange(from, to);
     const cached = await readCache(from, to);
@@ -403,7 +414,7 @@ Deno.serve(async (req) => {
       const entry = byDate.get(date);
       if (!entry || entry.status === "error") return true;
       if (entry.status === "ready" && !isCurrentCacheEntry(entry)) return true;
-      if ((refreshMode === "recent" || refreshMode === "force") && entry.status === "ready" && entry.updated_at < refreshCutoff) return true;
+      if (refreshMode === "force" && entry.status === "ready" && entry.updated_at < refreshCutoff) return true;
       return entry.status === "loading" && now - new Date(entry.updated_at).getTime() >= CACHE_STALE_MS;
     });
 
@@ -414,11 +425,11 @@ Deno.serve(async (req) => {
         const date = requestedDates[index];
         const entry = byDate.get(date);
         if (entry && entry.status === "ready" && isCurrentCacheEntry(entry)
-          && !((refreshMode === "recent" || refreshMode === "force") && entry.updated_at < refreshCutoff)) break;
+          && !(refreshMode === "force" && entry.updated_at < refreshCutoff)) break;
         syncingDates.push(date);
       }
       await Promise.all(syncingDates.map((date) => writeCache(date, { status: "loading", error: null, elapsed_ms: null })));
-      EdgeRuntime.waitUntil(syncCacheDates(syncingDates));
+      EdgeRuntime.waitUntil(syncCacheDates(syncingDates,cached));
     }
 
     const rows = cached.filter(isCurrentCacheEntry).flatMap((entry) => entry.rows || []);
