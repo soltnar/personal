@@ -5,7 +5,10 @@ export function nextAutomaticDate(entries, today, now = Date.now(), staleMs = 30
   const byDate=new Map(entries.map(e=>[e.work_date,e]));
   const yesterday=new Date(Date.parse(today+'T12:00:00Z')-86400000).toISOString().slice(0,10);
   const first=entries.length?entries.reduce((date,e)=>e.work_date<date?e.work_date:date,yesterday):yesterday;
-  for(let date=first;date<=yesterday;date=new Date(Date.parse(date+'T12:00:00Z')+86400000).toISOString().slice(0,10)) {
+  const candidates=[yesterday];
+  for(let date=first;date<yesterday;date=new Date(Date.parse(date+'T12:00:00Z')+86400000).toISOString().slice(0,10))candidates.push(date);
+  // Serve the fresh daily report before spending the remaining slots on old holes.
+  for(const date of candidates) {
     const entry=byDate.get(date);
     if(entry?.status==='ready')continue;
     // UTC+3 is fixed for Moscow. Compare actual date, not a rolling 24h window.
