@@ -7,14 +7,16 @@ const SABY_APP_CLIENT_ID = Deno.env.get("SABY_APP_CLIENT_ID")!;
 const SABY_APP_SECRET = Deno.env.get("SABY_APP_SECRET")!;
 const SABY_SERVICE_KEY = Deno.env.get("SABY_SERVICE_KEY")!;
 const ALLOWED_EMAIL = "soltnar@gmail.com";
-const PAGE_SIZE = 1000;
-const MAX_PAGES = 40;
+// Match Saby's actual UI pagination. Larger sizes intermittently hang even on
+// page zero (verified against the same date and token in server probes).
+const PAGE_SIZE = 30;
+const MAX_PAGES = 200;
 const SABY_REQUEST_TIMEOUT_MS = 25_000;
 const SABY_REQUEST_ATTEMPTS = 2;
 const EMPLOYEE_PAGE_SIZE = 100;
 const EMPLOYEE_CACHE_MS = 60 * 60 * 1000;
 const CACHE_FORMAT_VERSION = 4;
-const CACHE_BATCH_DAYS = 7;
+const CACHE_BATCH_DAYS = 1;
 
 let employeeCache: { expiresAt: number; rows: Record<string, unknown>[] } | null = null;
 const CACHE_TABLE = "attendance_daily_cache";
@@ -76,13 +78,14 @@ async function cacheRequest(path: string, init: RequestInit = {}) {
 }
 
 async function readCache(from: string, to: string) {
-  const query = `?select=work_date,status,rows,error,updated_at&work_date=gte.${from}&work_date=lte.${to}&order=work_date.asc`;
+  const query = `?select=work_date,status,rows,error,updated_at,sync_progress&work_date=gte.${from}&work_date=lte.${to}&order=work_date.asc`;
   return await cacheRequest(query) as Array<{
     work_date: string;
     status: string;
     rows: Record<string, unknown>[] | null;
     error: string | null;
     updated_at: string;
+    sync_progress?: {signature:string;next_page:number;rows:Record<string,unknown>[];complete:boolean;attempt_day:string;stable:boolean;failed_at?:string};
   }>;
 }
 
@@ -256,10 +259,11 @@ async function fetchEmployees(token: string) {
   return rows;
 }
 
-async function fetchAttendance(from: string, to: string, token: string) {
+async function fetchAttendance(from: string, to: string, token: string, progress: Awaited<ReturnType<typeof readCache>>[number]['sync_progress'] | null = null, saveProgress: (value:Record<string,unknown>)=>Promise<unknown> = async()=>{}) {
   const startedAt = Date.now();
-  const rows: Record<string, unknown>[] = [];
+  const rows: Record<string, unknown>[] = progress?.rows ? [...progress.rows] : [];
   let pagesLoaded = 0;
+  if(progress && !progress.complete && progress.next_page>=MAX_PAGES)throw new Error('Превышен лимит страниц проходной');
 
   const fetchPage = async (page: number) => {
     for (let attempt = 1; attempt <= SABY_REQUEST_ATTEMPTS; attempt += 1) {
@@ -275,6 +279,10 @@ async function fetchAttendance(from: string, to: string, token: string) {
           },
           body: JSON.stringify(attendanceRequest(from, to, page)),
         });
+        if(response.status===429){
+          const error=new Error(`Saby ограничил частоту запросов (HTTP 429). Retry-After: ${response.headers.get('Retry-After')||'не указан'}. Повторите позже.`);
+          error.name='SabyRateLimitError';throw error;
+        }
         const data = await response.json();
         if (!response.ok || data.error) {
           throw new Error(`Saby не вернул проходную: ${data.error?.message || response.status}`);
@@ -284,20 +292,24 @@ async function fetchAttendance(from: string, to: string, token: string) {
           hasMore: data.result?.n !== false,
         };
       } catch (error) {
+        if(error instanceof Error && error.name==='SabyRateLimitError')throw error;
         if (attempt === SABY_REQUEST_ATTEMPTS) throw error;
-        console.log(JSON.stringify({ event: "attendance_page_retry", page, attempt }));
+        console.log(JSON.stringify({ event: "attendance_page_retry", page, attempt, pageSize:PAGE_SIZE, error:error instanceof Error?error.message:'unknown' }));
+        await new Promise(resolve=>setTimeout(resolve,2000));
       }
     }
     throw new Error("Saby не вернул страницу проходной");
   };
 
-  // Saby throttles parallel report requests, so larger pages are faster and
-  // more reliable than concurrent pagination.
-  for (let page = 0; page < MAX_PAGES; page += 1) {
+  // Serial requests with a >=1.6s gap: below 38 page starts/minute per loader.
+  for (let page = progress?.complete ? MAX_PAGES : progress?.next_page || 0; page < MAX_PAGES; page += 1) {
+    if(page>0)await new Promise(resolve=>setTimeout(resolve,1600));
     const result = await fetchPage(page);
     pagesLoaded += 1;
     rows.push(...result.rows);
-    if (result.rows.length < PAGE_SIZE || !result.hasMore) break;
+    const complete=result.rows.length < PAGE_SIZE || !result.hasMore;
+    await saveProgress({next_page:page+1,rows,complete});
+    if (complete) break;
     if (page === MAX_PAGES - 1) throw new Error("Превышен лимит страниц проходной");
   }
 
@@ -342,9 +354,14 @@ async function syncCacheDates(workDates: string[], previous: Awaited<ReturnType<
   const lastDate = workDates[workDates.length - 1];
   try {
     const token = await sabyToken();
-    // One report covers several operational days. This removes one Saby report
-    // startup per day while still storing independently reusable daily entries.
-    const attendance = await fetchAttendance(firstDate, lastDate, token);
+    // A single operational day is checkpointed independently. Incomplete raw
+    // pages never replace the last completed report rows.
+    const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    const signature=JSON.stringify([firstDate,lastDate,PAGE_SIZE,CACHE_FORMAT_VERSION]);
+    const old=previous.find(entry=>entry.work_date===firstDate);
+    const saved=old?.sync_progress;
+    const progress=old?.status!=='ready' && saved?.signature===signature && (saved.stable||saved.attempt_day===today) ? saved : null;
+    const attendance = await fetchAttendance(firstDate,lastDate,token,progress,values=>cacheRequest(`?work_date=eq.${firstDate}`,{method:'PATCH',body:JSON.stringify({sync_progress:{...values,signature,attempt_day:today,stable:nextDate(lastDate)<today},updated_at:new Date().toISOString()})}));
     for (const workDate of workDates) {
       const workDayRows = attendance.rows
         .filter((row) => operationalDate(row.dateTime) === workDate)
@@ -353,6 +370,7 @@ async function syncCacheDates(workDates: string[], previous: Awaited<ReturnType<
         status: "ready",
         rows: workDayRows,
         error: null,
+        sync_progress: null,
         elapsed_ms: attendance.elapsedMs,
       });
     }
@@ -362,7 +380,7 @@ async function syncCacheDates(workDates: string[], previous: Awaited<ReturnType<
     await Promise.all(workDates.map((workDate) => {
       const old=previous.find(entry=>entry.work_date===workDate);
       const values=failureValues(old,message,Date.now()-startedAt);
-      if(old?.status==='ready')return cacheRequest(`?work_date=eq.${workDate}`,{method:'PATCH',body:JSON.stringify({...values,updated_at:old.updated_at})});
+      if(old?.status==='ready')return cacheRequest(`?work_date=eq.${workDate}`,{method:'PATCH',body:JSON.stringify({...values,updated_at:old.updated_at,sync_progress:{failed_at:new Date().toISOString()}})});
       return writeCache(workDate,values);
     }));
     console.error(JSON.stringify({ event: "attendance_cache_batch_error", from: firstDate, to: lastDate, error: message, elapsedMs: Date.now() - startedAt }));
@@ -412,7 +430,9 @@ Deno.serve(async (req) => {
     );
     const nextMissing = requestedDates.find((date) => {
       const entry = byDate.get(date);
-      if (!entry || entry.status === "error") return true;
+      if (!entry) return true;
+      if (refreshMode === 'force' && entry.error && (entry.sync_progress?.failed_at || '') >= refreshCutoff) return false;
+      if (entry.status === "error") return refreshMode !== 'force' || entry.updated_at < refreshCutoff;
       if (entry.status === "ready" && !isCurrentCacheEntry(entry)) return true;
       if (refreshMode === "force" && entry.status === "ready" && entry.updated_at < refreshCutoff) return true;
       return entry.status === "loading" && now - new Date(entry.updated_at).getTime() >= CACHE_STALE_MS;
@@ -437,7 +457,7 @@ Deno.serve(async (req) => {
       .filter((entry) => refreshMode !== "force" || entry.updated_at >= refreshCutoff)
       .map((entry) => entry.work_date);
     const pendingDates = requestedDates.filter((date) => !readyDates.includes(date));
-    const errors = cached.filter((entry) => entry.status === "error").map((entry) => ({ date: entry.work_date, error: entry.error }));
+    const errors = cached.filter((entry) => entry.status === "error" || (refreshMode === 'force' && entry.error && (entry.sync_progress?.failed_at || '') >= refreshCutoff)).map((entry) => ({ date: entry.work_date, error: entry.error }));
     return json({
       from,
       to,
@@ -454,6 +474,8 @@ Deno.serve(async (req) => {
         cacheTotal: requestedDates.length,
         syncingDate: syncingDates[0] || null,
         syncingDates,
+        progressPage: cached.find(entry=>entry.status==='loading')?.sync_progress?.next_page || 0,
+        progressRows: cached.find(entry=>entry.status==='loading')?.sync_progress?.rows?.length || 0,
         employees: 0,
         employeeSource: "separate-request",
       },

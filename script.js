@@ -1,4 +1,4 @@
-const APP_VERSION = "4.2.3";
+const APP_VERSION = "4.2.4";
 let reportRows = null;
 let reportAdmin = false;
 const DAY_CUTOFF_SECONDS = 4 * 3600;
@@ -421,7 +421,7 @@ function prepareSabyData(rows, from, to, employees = []) {
 
 const SABY_CACHE_POLL_MS = 4000;
 const SABY_CACHE_WAIT_MS = 15 * 60 * 1000;
-const SABY_API_TIMEOUT_MS = 20000;
+const SABY_API_TIMEOUT_MS = 45000;
 const SABY_EMPLOYEES_TIMEOUT_MS = 90000;
 
 function addDaysIso(dateIso, days) {
@@ -512,6 +512,7 @@ async function loadSabyFromApi(options = {}) {
   const startedAt = Date.now();
 
   try {
+    setSabyApiStatus('Запускаем обновление. Получение страниц Saby выполняется в фоне…','loading');
     // The official employee directory is independent from attendance. Load it
     // in parallel so a slow directory page cannot delay or break cache polling.
     const syncBefore = options.force === true ? new Date().toISOString() : "";
@@ -522,9 +523,11 @@ async function loadSabyFromApi(options = {}) {
       const ready = payload.readyDates?.length || 0;
       const total = ready + (payload.pendingDates?.length || 0);
       if (payload.complete) break;
+      if(payload.errors?.length && !payload.diagnostics?.syncingDates?.length)throw new Error(payload.errors.map(item=>`${item.date}: ${item.error}`).join('; '));
       if (!syncBefore) throw new Error(`В базе отсутствуют или не готовы ${payload.pendingDates?.length || 0} дней: ${(payload.pendingDates || []).join(", ")}. Запустите синхронизацию в настройках`);
       const currentDate = payload.diagnostics?.syncingDate || payload.pendingDates?.[0] || "следующая дата";
-      setSabyApiStatus(`Кэшируем проходную: готово ${ready} из ${total} дней. Сейчас загружается ${currentDate}…`, "loading");
+      const progress=payload.diagnostics?.progressPage ? ` Сохранено страниц: ${payload.diagnostics.progressPage}, исходных событий: ${payload.diagnostics.progressRows}.` : '';
+      setSabyApiStatus(`Кэшируем проходную: готово ${ready} из ${total} дней. Сейчас загружается ${currentDate}.${progress}`, "loading");
       await new Promise((resolve) => setTimeout(resolve, SABY_CACHE_POLL_MS));
     }
 
@@ -1346,8 +1349,7 @@ function buildDetailsHtml(row) {
 
 function renderTable(rows) {
   document.getElementById("metricShifts").textContent = rows.length ? formatShift(rows.reduce((sum, row) => sum + row.total, 0)) : "—";
-  const knownRevenue=rows.filter(row=>Number.isFinite(row.revenue));
-  const partialRevenue=knownRevenue.length<rows.length;
+  const {known:knownRevenue,partial:partialRevenue}=summarizeReportRevenue(rows);
   document.getElementById("metricRevenue").textContent = knownRevenue.length ? `${formatMoney(knownRevenue.reduce((sum, row) => sum + row.revenue, 0))} ₽${partialRevenue?' *':''}` : "—";
   document.getElementById("metricRevenue").title=partialRevenue?"Сумма сохранённой выручки; есть предприятия без выручки":"Сумма сохранённой выручки";
   document.getElementById("metricRestaurants").textContent = rows.length ? new Set(rows.map((row) => row.restaurant).filter((name) => name !== "Подразделение не определено")).size : "—";
@@ -1375,7 +1377,7 @@ function renderTable(rows) {
     totalHall += r.hall || 0;
     totalDelivery += r.delivery || 0;
     totalBar += r.bar || 0;
-    totalRevenue += Number.isFinite(r.revenue) ? r.revenue : 0;
+    totalRevenue += !isProductionEnterprise(r)&&Number.isFinite(r.revenue) ? r.revenue : 0;
 
     const tr = document.createElement("tr");
     const detailsTr = document.createElement("tr");
@@ -1398,7 +1400,7 @@ function renderTable(rows) {
       <td>${formatShift(r.hall)}</td>
       <td>${formatShift(r.delivery)}</td>
       <td>${formatShift(r.bar)}</td>
-      <td>${Number.isFinite(r.revenue) ? formatMoney(r.revenue) : "—"}</td>
+      <td${isProductionEnterprise(r)?' title="Производство: выручка не применяется"':''}>${!isProductionEnterprise(r)&&Number.isFinite(r.revenue) ? formatMoney(r.revenue) : "—"}</td>
       <td>${formatShift(r.total)}</td>
       <td>${formatProductivity(r,"kitchen")}</td>
       <td>${formatProductivity(r,"hall")}</td>
