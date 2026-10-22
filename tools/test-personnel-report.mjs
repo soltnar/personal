@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import { summarizeAttendance, restrictRows } from '../supabase/functions/personnel-report/engine.mjs';
+import { sabyExportDirection } from './saby-export-direction.mjs';
 const event=(time,action,gate,person='Тестовый сотрудник')=>({dateTime:'2026-10-14 '+time,actionType:action,department:gate,position:'Повар',person});
 const days=[{work_date:'2026-10-14',status:'ready',rows:[event('08:00:00',1,'Самурай Белинского 61'),event('20:00:00',0,'Самурай Белинского 61')]}];
 const sales=[{sale_date:'2026-10-14',restaurant:'Самурай, Белинского, д.61 (КУХНЯ)',revenue:100000},{sale_date:'2026-10-14',restaurant:'Самурай, Белинского, д.61 (БАР)',revenue:40000}];
 const rows=summarizeAttendance(days,sales);
+assert.equal(sabyExportDirection('Выход'),0);assert.equal(sabyExportDirection('Вход'),1);assert.throws(()=>sabyExportDirection('Неизвестно'));
+const recovered=summarizeAttendance([{work_date:'2026-10-14',status:'ready',rows:[event('08:00:00',sabyExportDirection('Вход'),'Самурай Белинского 61'),event('20:00:00',sabyExportDirection('Выход'),'Самурай Белинского 61')]}],sales);
+assert.equal(recovered[0].details.kitchen[0].hasConflict,false,'A recovered export exit must not produce a missing-exit warning');
+assert.equal(recovered[0].kitchen,1);
 assert.equal(rows[0].kitchen,1);assert.equal(rows[0].revenue,140000);assert.equal(rows[0].kitchenRevenue,100000);assert.equal(rows[0].barRevenue,40000);
 const grants=[{restaurant:'Белинского, 61 Самурай',roles:['kitchen']}];
 const unified=summarizeAttendance([],['Самурай Доставка Геологов','Самурай Доставка Моторный пер 2к1','Самурай Доставка Коминтерна 166'].map(restaurant=>({restaurant,sale_date:'2026-10-14',revenue:1000})));
