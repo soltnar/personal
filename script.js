@@ -1,4 +1,4 @@
-const APP_VERSION = "4.2.0";
+const APP_VERSION = "4.2.1";
 let reportRows = null;
 let reportAdmin = false;
 const DAY_CUTOFF_SECONDS = 4 * 3600;
@@ -52,6 +52,12 @@ function isoLocalDate(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function yesterdayMoscow(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en', {timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now);
+  const values = Object.fromEntries(parts.map(part=>[part.type,part.value]));
+  return new Date(Date.UTC(Number(values.year),Number(values.month)-1,Number(values.day)-1)).toISOString().slice(0,10);
 }
 
 function setDefaultSabyPeriod() {
@@ -1551,6 +1557,11 @@ for (const [id, selected] of [["selectAllRestaurants", true], ["clearRestaurants
 }
 document.querySelectorAll("[data-period]").forEach((button) => {
   button.addEventListener("click", () => {
+    if(button.dataset.period === "yesterday") {
+      sabyFromInput.value = sabyToInput.value = yesterdayMoscow();
+      updateRevenueDbButtons();
+      return;
+    }
     const end = new Date();
     const start = new Date(end);
     if (button.dataset.period === "week") start.setDate(start.getDate() - 6);
