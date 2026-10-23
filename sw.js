@@ -1,5 +1,5 @@
-const SHELL='personnel-shell-v4.2.4';
-const FILES=['./','./index.html','./styles.css?v=4.2.4','./script.js?v=4.2.4','./report-ui.js?v=4.2.4','./saby-login.js?v=4.2.4','./workspace.js?v=4.2.4','./access-ui.js?v=4.2.4','./manifest.webmanifest'];
+const SHELL='personnel-shell-v4.2.5';
+const FILES=['./','./index.html','./styles.css?v=4.2.5','./script.js?v=4.2.5','./report-ui.js?v=4.2.5','./saby-login.js?v=4.2.5','./workspace.js?v=4.2.5','./access-ui.js?v=4.2.5','./manifest.webmanifest','./icon.svg?v=4.2.5','./personnel-icon-32.png','./personnel-icon-180.png','./personnel-icon-192.png','./personnel-icon-512.png','./personnel-icon-maskable-512.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(SHELL).then(cache=>cache.addAll(FILES)));self.skipWaiting();});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('personnel-shell-')&&k!==SHELL).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',event=>{

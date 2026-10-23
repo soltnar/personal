@@ -1,1 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" rx="110" fill="#346655"/><text x="256" y="350" text-anchor="middle" font-family="Arial,sans-serif" font-size="280" font-weight="700" fill="#fff">П</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="116" fill="#346655"/>
+  <circle cx="256" cy="168" r="40" fill="#fff"/>
+  <circle cx="146" cy="207" r="29" fill="#bcd9cd"/>
+  <circle cx="366" cy="207" r="29" fill="#bcd9cd"/>
+  <path d="M96 316a50 50 0 0 1 100 0v36H118a22 22 0 0 1-22-22zM316 316a50 50 0 0 1 100 0v14a22 22 0 0 1-22 22h-78z" fill="#bcd9cd"/>
+  <path d="M181 312a75 75 0 0 1 150 0v52a20 20 0 0 1-20 20H201a20 20 0 0 1-20-20z" fill="#fff"/>
+</svg>

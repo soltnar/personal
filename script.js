@@ -1,4 +1,4 @@
-const APP_VERSION = "4.2.4";
+const APP_VERSION = "4.2.5";
 let reportRows = null;
 let reportAdmin = false;
 const DAY_CUTOFF_SECONDS = 4 * 3600;
@@ -60,13 +60,11 @@ function yesterdayMoscow(now = new Date()) {
   return new Date(Date.UTC(Number(values.year),Number(values.month)-1,Number(values.day)-1)).toISOString().slice(0,10);
 }
 
-function setDefaultSabyPeriod() {
+function setDefaultSabyPeriod(now = new Date()) {
   if (!sabyFromInput || !sabyToInput) return;
-  const today = new Date();
-  const weekAgo = new Date(today);
-  weekAgo.setDate(today.getDate() - 7);
-  sabyFromInput.value ||= isoLocalDate(weekAgo);
-  sabyToInput.value ||= isoLocalDate(today);
+  const yesterday = yesterdayMoscow(now);
+  sabyFromInput.value ||= yesterday;
+  sabyToInput.value ||= yesterday;
 }
 
 function excelDateToSerialDay(value) {
