@@ -28,6 +28,7 @@ async function loadScopedReport() {
     const currentUser=(await getReportSession())?.user?.id;
     if(!startingUser||currentUser!==startingUser) return;
     reportRows=payload.rows;reportAdmin=payload.admin;
+    if(typeof setLoadedPeriod==='function')setLoadedPeriod(from,to);
     document.getElementById("accessSettings").hidden=!reportAdmin;
     document.getElementById("forceSyncBtn").hidden=!reportAdmin;
     const restaurants=[...new Set(reportRows.map(r=>r.restaurant))].sort((a,b)=>a.localeCompare(b,"ru"));
@@ -143,12 +144,40 @@ function renderProductivity(rows) {
   if(rows.some(isProductionEnterprise)){const note=document.createElement('p');note.className='hint';note.textContent='Фабрика кухни — производство. Её сотрудники и смены учтены в отчёте, но не входят в выработку ресторанов и проверку выручки.';container.append(note);}
   document.getElementById('metricDays').textContent=reportRows?.length?new Set(reportRows.map(r=>r.dateIso)).size:"—";
 }
+let accessLoadedFor=null,accessPending=null,accessRequestId=0,visibleGoogleGrants=[];
+function resetAccessView(){accessLoadedFor=null;accessPending=null;accessRequestId++;visibleGoogleGrants=[];document.getElementById('accessList').replaceChildren();}
+function ensureAccessLoaded(){if(!workspaceIsOwner())return;if(accessLoadedFor!==revenueDbSession?.user?.id&&!accessPending)return showAccess();}
 async function showAccess(){
-  const status=document.getElementById('accessStatus');
-  try{const data=await reportRequest('?resource=access');const list=document.getElementById('accessList');list.replaceChildren();for(const grant of data.grants){const item=document.createElement('div');item.className='grantRow';const text=document.createElement('span');text.textContent=`${grant.email} · ${grant.restaurant} · ${grant.roles.map(r=>roleLabels[r]).join(', ')}`;const remove=document.createElement('button');remove.textContent='Отозвать';remove.className='textBtn';remove.onclick=async()=>{try{await reportRequest('?resource=access',{method:'POST',body:JSON.stringify({...grant,roles:[]})});await showAccess();}catch(e){status.textContent=e.message;}};item.append(text,remove);list.append(item);}}catch(e){status.textContent=e.message;}
+  if(!workspaceIsOwner())return;
+  const requestId=++accessRequestId,ownerId=revenueDbSession?.user?.id,status=document.getElementById('accessStatus');
+  status.textContent='Загружаем пользователей…';
+  const task=(async()=>{try{
+    const data=await reportRequest('?resource=access');
+    if(requestId!==accessRequestId||!workspaceIsOwner()||revenueDbSession?.user?.id!==ownerId)return;
+    visibleGoogleGrants=data.grants;accessLoadedFor=ownerId;renderGoogleUsers();
+    status.textContent=`Пользователей с назначенным доступом: ${new Set(data.grants.map(grant=>grant.email)).size}`;
+  }catch(error){if(requestId===accessRequestId)status.textContent=`Не удалось загрузить назначения: ${error.message}. Нажмите «Обновить».`;}
+  finally{if(requestId===accessRequestId)accessPending=null;}})();
+  accessPending=task;return task;
+}
+function renderGoogleUsers(){
+  const list=document.getElementById('accessList');list.replaceChildren();
+  const search=(document.getElementById('accessUserSearch')?.value||'').trim().toLowerCase(),users=new Map();
+  for(const grant of visibleGoogleGrants){if(!grant.email.toLowerCase().includes(search))continue;if(!users.has(grant.email))users.set(grant.email,[]);users.get(grant.email).push(grant);}
+  for(const [email,grants] of users){
+    const item=document.createElement('article');item.className='googleUser';
+    const header=document.createElement('header'),identity=document.createElement('div'),title=document.createElement('strong'),description=document.createElement('p');
+    title.textContent=email;description.className='hint';description.textContent=`Google · Предприятий: ${grants.length} · ${[...new Set(grants.flatMap(grant=>grant.roles))].map(role=>roleLabels[role]).join(', ')}`;identity.append(title,description);
+    const add=document.createElement('button');add.type='button';add.className='secondaryBtn';add.textContent='Назначить доступ';add.onclick=()=>{const settings=document.getElementById('accessSettings');settings.open=true;document.getElementById('accessEmail').value=email;settings.scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('accessEmail').focus({preventScroll:true});};
+    header.append(identity,add);item.append(header);
+    const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Предприятия и права';details.append(summary);
+    for(const grant of grants){const row=document.createElement('div');row.className='googleGrant';const text=document.createElement('span'),name=document.createElement('span'),roles=document.createElement('small');name.textContent=grant.restaurant;roles.textContent=grant.roles.map(role=>roleLabels[role]).join(', ');text.append(name,roles);const revoke=document.createElement('button');revoke.type='button';revoke.className='textBtn dangerAction';revoke.textContent='Отозвать';revoke.setAttribute('aria-label',`Отозвать доступ ${email} к ${grant.restaurant}`);revoke.onclick=async()=>{if(!confirm(`Отозвать доступ ${email} к предприятию «${grant.restaurant}»?`))return;revoke.disabled=true;try{await reportRequest('?resource=access',{method:'POST',body:JSON.stringify({...grant,roles:[]})});await showAccess();}catch(error){document.getElementById('accessStatus').textContent=error.message;revoke.disabled=false;}};row.append(text,revoke);details.append(row);}item.append(details);list.append(item);
+  }
+  if(!users.size){const p=document.createElement('p');p.className='hint';p.textContent=search?'По этому email назначений нет.':'Google-доступ пока никому не назначен. Добавьте пользователя ниже.';list.append(p);}
 }
 document.getElementById('accessForm').addEventListener('submit',async(event)=>{event.preventDefault();const status=document.getElementById('accessStatus'),button=event.submitter;try{const roles=[...document.querySelectorAll('[name=accessRole]:checked')].map(i=>i.value),restaurants=[...document.getElementById('accessRestaurant').selectedOptions].map(o=>o.value);if(!roles.length)throw new Error('Выберите хотя бы один раздел');if(!restaurants.length)throw new Error('Выберите хотя бы одно предприятие');if(button)button.disabled=true;await reportRequest('?resource=access',{method:'POST',body:JSON.stringify({email:document.getElementById('accessEmail').value.trim(),restaurants,roles})});status.textContent=`Доступ сохранён для ${restaurants.length} предприятий`;await showAccess();}catch(e){status.textContent=e.message;}finally{if(button)button.disabled=false;}});
 document.getElementById('accessReload').addEventListener('click',showAccess);
+document.getElementById('accessUserSearch')?.addEventListener('input',renderGoogleUsers);
 document.getElementById('reportView').addEventListener('change',()=>{if(reportRows!==null){lastResultRows=calculateScopedRows();renderTable(lastResultRows);}});
 document.querySelectorAll('.groupCheck').forEach(i=>i.addEventListener('change',()=>{if(reportRows!==null){lastResultRows=calculateScopedRows();renderTable(lastResultRows);}}));
 let installEvent;
@@ -177,7 +206,7 @@ function reportExportData(rows){
   return [["Период / дата","Предприятие","Кухня, смены","Зал, смены","Бар, смены","Доставка, смены","Сохранённая общая выручка","Сохранённая выручка кухни","Сохранённая выручка бара",...roles.flatMap(k=>[`${roleLabels[k]} ₽/смену`,`${roleLabels[k]} смен в расчёте выработки`,`${roleLabels[k]} пропущено предприятие-дней`])],...rows.map(r=>[r.dateIso||`${sabyFromInput.value} — ${sabyToInput.value}`,r.restaurant,...roles.map(k=>r[k]??""),...['revenue','kitchenRevenue','barRevenue'].map(key=>isProductionEnterprise(r)?'':r[key]??''),...roles.flatMap(k=>{if(isProductionEnterprise(r))return ['','',''];const sample=r.coverage?.[k]||productivitySample(r,k);return [sample.shifts>0?sample.revenue/sample.shifts:"",sample.shifts,sample.missing];})])];
 }
 function exportReportCSV(rows){return reportExportData(rows).map(line=>line.map(value=>`"${String(value).replaceAll('"','""')}"`).join(';')).join('\n');}
-function clearScopedSession(){reportRows=[];reportAdmin=false;lastResultRows=[];baseRecords=[];mappedRecords=[];revenueRows=[];staffRestaurantMap.clear();renderTable([]);fillMultiSelect(restaurantSelect,[]);document.getElementById('accessSettings').hidden=true;document.getElementById('forceSyncBtn').hidden=true;document.getElementById('accessList').replaceChildren();}
+function clearScopedSession(){reportRows=[];reportAdmin=false;lastResultRows=[];baseRecords=[];mappedRecords=[];revenueRows=[];staffRestaurantMap.clear();if(typeof clearRoleWorkspace==='function')clearRoleWorkspace();renderTable([]);fillMultiSelect(restaurantSelect,[]);document.getElementById('accessSettings').hidden=true;document.getElementById('forceSyncBtn').hidden=true;document.getElementById('accessList').replaceChildren();}
 // Clear financial/personnel data whenever a session changes, including logout.
 let scopedUserId=revenueDbSession?.user?.id||null;
 if(supabaseClient) supabaseClient.auth.onAuthStateChange((_event,session)=>{if(typeof getSabySession==='function'&&getSabySession())return;if((session?.user?.id||null)!==scopedUserId){clearScopedSession();scopedUserId=session?.user?.id||null;}if(typeof syncWorkspaceProfile==='function')syncWorkspaceProfile();});

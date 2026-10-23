@@ -1,7 +1,7 @@
 // Navigation is presentation only. Report APIs remain the authority for access.
 const workspaceViews = {
   overview: ['Обзор', 'ПОКАЗАТЕЛИ СЕТИ', 'Смены, выручка и выработка — всё главное за выбранный период.'],
-  enterprises: ['По предприятиям', 'ДЕТАЛЬНЫЙ ОТЧЁТ', 'От предприятия к дню и сотруднику. Выручка, смены и выработка рядом.'],
+  enterprises: ['По предприятиям', 'ДЕТАЛЬНЫЙ ОТЧЁТ', 'Выручка, смены и выработка по предприятиям.'],
   quality: ['Проверка данных', 'ПОЛНОТА И КАЧЕСТВО', 'Найдите пропуски и неоднозначные отметки, прежде чем делать выводы.'],
   settings: ['Настройки', 'ДАННЫЕ И ПРИЛОЖЕНИЕ', 'Синхронизация проходной, правила расчёта и установка приложения.'],
   users: ['Пользователи и доступ', 'УПРАВЛЕНИЕ', 'Подключение Saby и права сотрудников по предприятиям и разделам.'],
@@ -40,6 +40,9 @@ function showWorkspace(view, focus = false) {
   document.getElementById('usersNav').hidden = !workspaceIsOwner();
   document.getElementById('syncFrom').value=sabyFromInput.value;
   document.getElementById('syncTo').value=sabyToInput.value;
+  document.querySelectorAll('[data-mobile-view]').forEach(link=>{if(link.dataset.mobileView===view)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});
+  if(view==='users'&&workspaceIsOwner()&&typeof ensureAccessLoaded==='function')ensureAccessLoaded();
+  if(typeof syncCompactToolbar==='function')syncCompactToolbar();
   setWorkspaceMenu(false);
   if(focus) { document.getElementById('workspaceTitle').focus({preventScroll:true}); window.scrollTo({top:0,behavior:'instant'}); }
 }
@@ -79,6 +82,7 @@ function syncWorkspaceProfile() {
   showWorkspace(location.hash.slice(1) || 'overview');
 }
 function openWorkspaceDay(restaurant, date) {
+  if(typeof openRoleDay==='function'&&reportRows!==null){openRoleDay(restaurant,date);return;}
   navigateWorkspace('enterprises');
   // Reveal now as hashchange is asynchronous; the row must be visible before scrolling.
   showWorkspace('enterprises');

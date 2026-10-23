@@ -8,10 +8,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Персонал" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" type="image/svg+xml" href="icon.svg?v=4.2.6" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg?v=5.0.0" />
   <link rel="icon" type="image/png" sizes="32x32" href="personnel-icon-32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="personnel-icon-180.png" />
-  <link rel="stylesheet" href="styles.css?v=4.2.6" />
+  <link rel="stylesheet" href="styles.css?v=5.0.0" />
+  <link rel="stylesheet" href="role-workspace.css?v=5.0.0" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -33,14 +34,11 @@
   </aside>
   <main class="app">
     <header class="workspaceHeader"><div class="headerLeft"><button id="menuToggle" class="menuToggle secondaryBtn" type="button" aria-label="Открыть меню" aria-controls="appSidebar" aria-expanded="false">☰</button><span class="breadcrumb">Персонал и выручка <span>/</span> <strong id="breadcrumbCurrent">Обзор</strong></span></div><a href="#account" class="headerProfile"><span class="profileAvatar smallAvatar" data-profile-avatar>?</span><span data-profile-name>Гость</span></a></header>
-    <div class="pageHeading"><div><p class="eyebrow" id="workspaceEyebrow">ПОКАЗАТЕЛИ СЕТИ</p><h1 id="workspaceTitle" tabindex="-1">Обзор</h1><p class="subtitle" id="workspaceDescription">Смены, выручка и выработка — всё главное за выбранный период.</p></div><span class="versionBadge">Версия <span id="appVersion"></span></span></div>
+    <div class="pageHeading"><div><p class="eyebrow" id="workspaceEyebrow">ПОКАЗАТЕЛИ СЕТИ</p><h1 id="workspaceTitle" tabindex="-1">Обзор</h1><p class="subtitle" id="workspaceDescription">Смены, выручка и выработка — всё главное за выбранный период.</p></div></div>
 
-    <section class="panel autoDataPanel" data-pages="overview enterprises quality">
-      <div>
-        <p class="eyebrow">ПЕРИОД ОТЧЁТА</p><h2 class="panelTitle">За какой период смотрим?</h2>
-        <p class="hint">Проходная и выручка из сохранённых данных.</p>
-        <div class="presets" aria-label="Быстрый выбор периода"><button type="button" data-period="yesterday">Вчера</button><button type="button" data-period="week">7 дней</button><button type="button" data-period="month">Этот месяц</button><button type="button" data-period="previous">Прошлый месяц</button></div>
-      </div>
+    <section class="reportControls" data-pages="overview enterprises quality">
+      <details id="periodPicker" class="toolbarPopover"><summary><i data-feather="calendar" aria-hidden="true"></i><span id="periodLabel">Вчера</span><i data-feather="chevron-down" aria-hidden="true"></i></summary><div class="popoverBody">
+        <h2 class="panelTitle">Период отчёта</h2><div class="presets" aria-label="Быстрый выбор периода"><button type="button" data-period="yesterday">Вчера</button><button type="button" data-period="week">7 дней</button><button type="button" data-period="month">Этот месяц</button><button type="button" data-period="previous">Прошлый месяц</button></div>
       <div class="periodFields">
         <label class="label" for="sabyFrom">С даты
           <input id="sabyFrom" type="date" />
@@ -49,12 +47,15 @@
           <input id="sabyTo" type="date" />
         </label>
       </div>
+      <p class="hint">Измените период и нажмите «Показать».</p></div></details>
+      <button id="toggleFilters" class="secondaryBtn" type="button" aria-label="Фильтры" aria-controls="reportFilters" aria-expanded="false"><i data-feather="filter" aria-hidden="true"></i><span>Фильтры</span></button>
       <div class="revenueDbActions">
-        <button id="loadSabyBtn" type="button">Показать отчёт из базы</button>
+        <button id="loadSabyBtn" type="button">Показать</button>
         <a class="buttonLink secondaryBtn" href="#account" id="reportSignInLink">Войти для просмотра</a>
         <button id="loadRevenueDbBtn" type="button" class="secondaryBtn" hidden>Обновить отчёт</button>
       </div>
-      <div class="statusGroup" aria-live="polite"><p id="sabyApiStatus" class="status">Проверяем доступ к Saby…</p>
+      <details id="reportMore" class="toolbarPopover moreMenu"><summary><i data-feather="more-horizontal" aria-hidden="true"></i><span>Ещё</span></summary><div class="popoverBody"><label class="groupingControl">Группировка<select id="reportView"><option value="enterprise">По предприятиям за период</option><option value="daily">По дням</option></select></label><strong>Экспорт отчёта</strong><button id="csvBtn" disabled>Скачать CSV</button><button id="xlsxBtn" disabled>Скачать Excel</button><p class="hint">Учитывает выбранные предприятия и разделы.</p></div></details>
+      <div class="statusGroup" aria-live="polite"><p id="sabyApiStatus" class="status">Войдите и откройте отчёт.</p>
       <p id="revenueDbStatus" class="status compactStatus">Выручка будет загружена после проходной.</p>
       <p id="status" class="status compactStatus">Данные проходной пока не загружены.</p></div>
       <select id="dateSelect" multiple hidden aria-hidden="true"></select>
@@ -80,7 +81,8 @@
         <p class="hint">Смена учитывается на точке последнего выхода за рабочие сутки 04:00–03:59. Записи без выхода требуют проверки.</p>
       </div>
     </details>
-    <details id="sabySettings" class="panel fallbackPanel" data-pages="users" data-admin-only open hidden>
+    <section class="panel googleUsersPanel" data-pages="users" data-admin-only hidden><div class="resultsHeading"><div><h2 class="panelTitle">Пользователи Google</h2><p class="hint">Назначенные предприятия и разделы. Список загружается автоматически.</p></div><button id="accessReload" type="button" class="secondaryBtn">Обновить</button></div><label class="userSearch">Найти пользователя<input id="accessUserSearch" type="search" placeholder="Поиск по email"></label><p id="accessStatus" role="status"></p><div id="accessList"></div></section>
+    <details id="sabySettings" class="panel fallbackPanel" data-pages="users" data-admin-only hidden>
       <summary>Вход Saby: подключение и пользователи</summary>
       <div class="fallbackContent">
         <h3 class="panelTitle">Подключение интерактивной авторизации</h3>
@@ -96,21 +98,20 @@
         <p id="sabyAdminStatus" role="status"></p>
       </div>
     </details>
-    <details id="accessSettings" class="panel fallbackPanel" data-pages="users" data-admin-only open hidden>
-      <summary>Права доступа сотрудников</summary>
+    <details id="accessSettings" class="panel fallbackPanel" data-pages="users" data-admin-only hidden>
+      <summary>Добавить или изменить Google-доступ</summary>
       <div class="fallbackContent">
         <p class="hint">Для каждого предприятия назначайте разделы отдельно. Без назначения сотрудник не получит данные. Вход — через Google с указанным email.</p>
         <form id="accessForm" class="accessForm">
           <label>Email сотрудника<input id="accessEmail" type="email" required autocomplete="off"></label>
           <fieldset class="accessVenuePicker"><legend>Предприятия</legend><div class="accessVenueToolbar"><button id="accessAllVenues" type="button" class="textBtn">Все 18 ресторанов</button><button id="accessNoVenues" type="button" class="textBtn">Снять выбор</button><span id="accessVenueCount" class="hint">Не выбраны</span></div><div id="accessVenueChecklist" class="restaurantChecklist"></div><select id="accessRestaurant" multiple hidden aria-hidden="true"></select></fieldset>
           <div class="accessRoles"><label><input type="checkbox" name="accessRole" value="kitchen">Кухня</label><label><input type="checkbox" name="accessRole" value="hall">Зал</label><label><input type="checkbox" name="accessRole" value="bar">Бар</label><label><input type="checkbox" name="accessRole" value="delivery">Доставка</label></div>
-          <button type="submit">Сохранить доступ</button><button id="accessReload" type="button" class="secondaryBtn">Показать назначения</button>
+          <button type="submit">Сохранить доступ</button>
         </form>
-        <p id="accessStatus" role="status"></p><div id="accessList"></div>
       </div>
     </details>
     <section class="panel usersEmpty" id="usersEmpty" data-pages="users" hidden><h2 class="panelTitle">Управление доступом</h2><p class="hint">Раздел доступен владельцу через Google. Назначения Google заполняются после открытия отчёта.</p><a class="buttonLink secondaryBtn" href="#account">Мой аккаунт</a></section>
-    <details class="panel filtersPanel" data-pages="overview enterprises quality"><summary class="filtersSummary"><span><span class="eyebrow">ФИЛЬТРЫ</span><strong>Предприятия и разделы</strong></span><span id="filterSelectionLabel">Настроить выборку</span></summary><div class="filterIntro"><p class="hint">Выберите предприятия и разделы. Выбор применяется ко всем экранам аналитики.</p>
+    <details id="reportFilters" class="panel filtersPanel" data-pages="overview enterprises quality"><summary class="filtersSummary"><span><strong>Предприятия и разделы</strong></span><span id="filterSelectionLabel">Настроить выборку</span></summary><div class="filterIntro"><p class="hint">Выбор применяется ко всем экранам аналитики.</p>
       </div>
 
       <div class="filtersLayout">
@@ -146,13 +147,8 @@
           </fieldset>
         </div>
       </div>
+      <div class="filterApply"><button id="calcBtn">Применить фильтры</button></div>
     </details>
-
-    <section class="panel actions" data-pages="overview enterprises quality">
-      <button id="calcBtn">Применить фильтры</button>
-      <button id="csvBtn" disabled>Скачать CSV</button>
-      <button id="xlsxBtn" disabled>Скачать Excel</button>
-    </section>
 
     <section class="panel overviewPanel" data-pages="overview">
       <div class="resultsHeading"><div><p class="eyebrow">СВОДКА</p><h2 class="panelTitle">Главное за период</h2></div><span class="calculationNote">Сутки 04:00–03:59 · более 7 ч = 1 смена, до 7 ч = 0,5</span></div>
@@ -163,37 +159,32 @@
     </section>
     <section class="panel qualityPanel" data-pages="quality" hidden><div class="resultsHeading"><div><p class="eyebrow">ПОЛНОТА И КАЧЕСТВО</p><h2 class="panelTitle">Что требует внимания</h2></div><span id="qualityScope" class="hint">По текущим фильтрам</span></div><p class="hint">Пропуски выручки и неоднозначные отметки сотрудников — разные причины. Здесь они показаны отдельно с переходом к нужному дню.</p><details id="reportGaps" class="reportGaps" open><summary>Пропуски выручки</summary><p class="hint">Сначала откройте отчёт за нужный период.</p></details><div id="attendanceReviews"></div></section>
     <section class="panel resultsPanel" data-pages="enterprises" hidden>
-      <div class="viewToolbar"><label>Группировка <select id="reportView"><option value="enterprise">По предприятиям за период</option><option value="daily">По дням</option></select></label></div>
-      <div class="resultsHeading"><div><p class="eyebrow">ДЕТАЛЬНЫЙ ОТЧЁТ</p><h2 class="panelTitle">Смены и выработка предприятий</h2></div><span class="calculationNote">Раскройте предприятие, чтобы увидеть дни, группы и сотрудников.</span></div>
-      <div id="summary" class="summary">Нет данных для отображения.</div>
+      <nav id="roleTabs" class="roleTabs" aria-label="Раздел отчёта"></nav>
+      <div class="roleHeading"><h2 id="activeRoleTitle">Кухня</h2><span id="roleFormula" class="hint">Выручка кухни / смены кухни</span><label class="siteSearch"><i data-feather="search" aria-hidden="true"></i><input id="siteSearch" type="search" placeholder="Найти предприятие…" aria-label="Найти предприятие в отчёте"></label></div><div id="roleTotals" class="roleTotals"></div>
       <div class="tableWrap">
         <table id="resultTable">
           <thead>
             <tr>
-              <th>Детали</th>
-              <th>Дата</th>
-              <th>Ресторан</th>
-              <th>Кухня</th>
-              <th>Зал</th>
-              <th>Доставка</th>
-              <th>Бар</th>
-              <th>Выручка</th>
-              <th>Итого</th>
-              <th>Кухня ₽/смену</th><th>Зал ₽/смену</th><th>Бар ₽/смену</th><th>Доставка ₽/смену</th>
+              <th>Предприятие</th><th>Смены</th><th>Выручка кухни</th><th>₽/смену</th><th><span class="srOnly">Подробнее</span></th>
             </tr>
           </thead>
-          <tbody><tr><td colspan="9" class="initialEmpty"><strong>Здесь появится ваш отчёт</strong><span>Выберите период и загрузите данные, чтобы сравнить смены и выручку предприятий.</span></td></tr></tbody>
+          <tbody><tr><td colspan="5" class="initialEmpty"><strong>Откройте отчёт</strong><span>Выберите период и нажмите «Показать».</span></td></tr></tbody>
         </table>
       </div>
+      <div id="summary" class="summary">Нет данных для отображения.</div>
     </section>
 
-    <footer class="footer">Персонал и выручка · Источник данных: Saby <span>Рабочие сутки с 04:00</span></footer>
+    <footer class="footer">Персонал и выручка · Источник данных: Saby <span>Версия <span id="appVersion"></span> · Рабочие сутки с 04:00</span></footer>
   </main>
+  <nav class="mobileNav" aria-label="Мобильная навигация"><a href="#overview" data-mobile-view="overview"><i data-feather="bar-chart-2" aria-hidden="true"></i>Обзор</a><a href="#enterprises" data-mobile-view="enterprises"><i data-feather="map-pin" aria-hidden="true"></i>Точки</a><a href="#quality" data-mobile-view="quality"><i data-feather="check-square" aria-hidden="true"></i>Проверка</a><button id="mobileMore" type="button"><i data-feather="more-horizontal" aria-hidden="true"></i>Ещё</button></nav>
+  <dialog id="siteDialog" class="siteDialog" aria-labelledby="siteDialogTitle"><header><div><small id="siteDialogPeriod"></small><h2 id="siteDialogTitle"></h2></div><button id="closeSiteDialog" type="button" class="secondaryBtn" aria-label="Закрыть детали"><i data-feather="x" aria-hidden="true"></i></button></header><div id="siteDialogBody"></div></dialog>
 
-  <script src="script.js?v=4.2.6"></script>
-  <script src="report-ui.js?v=4.2.6"></script>
-  <script src="saby-login.js?v=4.2.6"></script>
-  <script src="workspace.js?v=4.2.6"></script>
-  <script src="access-ui.js?v=4.2.6"></script>
+  <script src="script.js?v=5.0.0"></script>
+  <script src="report-ui.js?v=5.0.0"></script>
+  <script src="saby-login.js?v=5.0.0"></script>
+  <script src="workspace.js?v=5.0.0"></script>
+  <script src="access-ui.js?v=5.0.0"></script>
+  <script src="vendor/feather.min.js"></script>
+  <script src="role-workspace.js?v=5.0.0"></script>
 </body>
 </html>

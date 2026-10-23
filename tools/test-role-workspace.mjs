@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source=fs.readFileSync(new URL('../role-workspace.js',import.meta.url),'utf8');
+const report=fs.readFileSync(new URL('../report-ui.js',import.meta.url),'utf8');
+const context=vm.createContext({roleLabels:{kitchen:'Кухня',bar:'Бар'},roleRevenue:{kitchen:'kitchenRevenue',bar:'barRevenue'},getCheckedGroups:()=>['Кухня'],isProductionEnterprise:row=>row.restaurant==='Фабрика кухни'});
+vm.runInContext(report.slice(report.indexOf('function productivitySample('),report.indexOf('function roleMetricsHtml(')),context);
+vm.runInContext(source.slice(source.indexOf('function reportRoleAllowed('),source.indexOf('function renderRoleReport(')),context);
+context.rows=[{restaurant:'A',allowedRoles:['kitchen'],kitchen:2,kitchenRevenue:100,total:2},{restaurant:'B',allowedRoles:['kitchen'],kitchen:8,kitchenRevenue:800,total:8},{restaurant:'Фабрика кухни',allowedRoles:['kitchen'],kitchen:12,total:12},{restaurant:'C',allowedRoles:['kitchen'],kitchen:3,total:3}];
+const totals=vm.runInContext('roleHeadingValues(rows,"kitchen")',context);
+assert.equal(totals.shifts,25);assert.equal(totals.sample.shifts,10);assert.equal(totals.sample.revenue,900);assert.equal(totals.sample.revenue/totals.sample.shifts,90);assert.equal(totals.sample.missing,1);
+assert.equal(vm.runInContext('roleHeadingValues(rows,"bar").eligible.length',context),0);
+const nodes=new Map();function node(id){if(!nodes.has(id))nodes.set(id,{children:[],value:'',replaceChildren(){this.children=[];},append(...items){this.children.push(...items);},setAttribute(){}});return nodes.get(id);}
+const access=vm.createContext({document:{getElementById:node,createElement:()=>({children:[],append(...items){this.children.push(...items);},setAttribute(){}})},workspaceIsOwner:()=>true,revenueDbSession:{user:{id:'owner'}},reportRequest:async()=>({grants:[]}),roleLabels:{}});
+vm.runInContext(report.slice(report.indexOf('let accessLoadedFor='),report.indexOf("document.getElementById('accessForm')")),access);
+await vm.runInContext('ensureAccessLoaded()',access);
+assert.match(node('accessStatus').textContent,/0/);
+let requests=0;access.reportRequest=async()=>{requests++;return {grants:[]};};await vm.runInContext('ensureAccessLoaded()',access);assert.equal(requests,0,'Loaded users do not refetch on every profile render');
+let finish;access.reportRequest=()=>new Promise(resolve=>{finish=resolve;});const pending=vm.runInContext('showAccess()',access);vm.runInContext('resetAccessView()',access);access.revenueDbSession={user:{id:'staff'}};access.workspaceIsOwner=()=>false;finish({grants:[{email:'must-not-render',roles:[]}]});await pending;assert.equal(node('accessList').children.length,0,'Late owner response must not render after identity change');
+assert.match(source,/reportRoleAllowed\(row,key\)/);assert.match(source,/person.reviewReason/);assert.match(source,/dialog.showModal/);
+console.log('PASS: weighted productivity, factory exclusion, missing days, role isolation, access autoload deduplication and stale-session guard');
