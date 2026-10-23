@@ -152,8 +152,24 @@ document.getElementById('accessReload').addEventListener('click',showAccess);
 document.getElementById('reportView').addEventListener('change',()=>{if(reportRows!==null){lastResultRows=calculateScopedRows();renderTable(lastResultRows);}});
 document.querySelectorAll('.groupCheck').forEach(i=>i.addEventListener('change',()=>{if(reportRows!==null){lastResultRows=calculateScopedRows();renderTable(lastResultRows);}}));
 let installEvent;
-window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installEvent=event;});
-document.getElementById('installApp').onclick=async()=>{if(installEvent){await installEvent.prompt();installEvent=null;}else alert('iPhone: откройте меню «Поделиться» → «На экран Домой». Android: меню браузера → «Установить приложение».');};
+let appInstalled=false;
+const standaloneDisplay=window.matchMedia?.('(display-mode: standalone)');
+function isInstalledApp(){return appInstalled||standaloneDisplay?.matches===true||navigator.standalone===true;}
+function syncInstallUI(){
+  const installed=isInstalledApp();
+  document.getElementById('installApp').hidden=installed;
+  document.getElementById('installStatus').hidden=!installed;
+  document.getElementById('installHint').textContent=installed?'Вы используете установленное приложение. Для отчётов нужен интернет.':'Установите приложение на телефон или компьютер. Для отчётов нужен интернет.';
+}
+standaloneDisplay?.addEventListener?.('change',syncInstallUI);
+window.addEventListener('appinstalled',()=>{appInstalled=true;installEvent=null;syncInstallUI();});
+window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();if(!isInstalledApp())installEvent=event;syncInstallUI();});
+document.getElementById('installApp').onclick=async()=>{
+  if(isInstalledApp()){syncInstallUI();return;}
+  if(installEvent){await installEvent.prompt();installEvent=null;}
+  else alert('iPhone: откройте меню «Поделиться» → «На экран Домой». Android: меню браузера → «Установить приложение».');
+};
+syncInstallUI();
 if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
 function reportExportData(rows){
