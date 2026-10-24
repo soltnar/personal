@@ -1,5 +1,5 @@
-const SHELL='personnel-shell-v5.0.5';
-const FILES=['./','./index.html','./styles.css?v=5.0.5','./script.js?v=5.0.5','./report-ui.js?v=5.0.5','./saby-login.js?v=5.0.5','./workspace.js?v=5.0.5','./access-ui.js?v=5.0.5','./role-workspace.css?v=5.0.5','./role-workspace.js?v=5.0.5','./vendor/feather.min.js','./manifest.webmanifest','./icon.svg?v=5.0.5','./personnel-icon-32.png','./personnel-icon-180.png','./personnel-icon-192.png','./personnel-icon-512.png','./personnel-icon-maskable-512.png'];
+const SHELL='personnel-shell-v5.0.6';
+const FILES=['./','./index.html','./styles.css?v=5.0.6','./script.js?v=5.0.6','./report-ui.js?v=5.0.6','./saby-login.js?v=5.0.6','./workspace.js?v=5.0.6','./access-ui.js?v=5.0.6','./role-workspace.css?v=5.0.6','./role-workspace.js?v=5.0.6','./vendor/feather.min.js','./manifest.webmanifest','./icon.svg?v=5.0.6','./personnel-icon-32.png','./personnel-icon-180.png','./personnel-icon-192.png','./personnel-icon-512.png','./personnel-icon-maskable-512.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(SHELL).then(cache=>cache.addAll(FILES)));self.skipWaiting();});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('personnel-shell-')&&k!==SHELL).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',event=>{
