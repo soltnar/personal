@@ -23,3 +23,8 @@ const admin=restrictRows(rows,[],true)[0];assert.equal(admin.unclassified.length
 const staff=restrictRows(rows,[{restaurant:rows[0].restaurant,roles:['delivery']}],false)[0];
 assert.equal(staff.deliveryRevenue,400);assert(!Object.hasOwn(staff,'unclassified'));assert(!Object.hasOwn(staff,'revenue'));
 console.log('PASS: courier-only orders, missing prices, deduplication, cursor loop rejection, mixed-venue delivery revenue, warehouse merging, uncategorized single marks and access isolation');
+for(const [position,role] of [['Гардеробщик упр','hall'],['Ранер','hall'],['Раннер','hall'],['Аниматор','hall'],['Менеджер. (Категория 5000 (5747) 442)','hall'],['Хостес. (Категория 3800 (4350) 335)','hall'],['Сомелье. (Категория 5000 (5741) 290/9 часов)','bar'],['Барменеджер','bar']]){
+  const mapped=summarizeAttendance([{work_date:'2026-10-23',rows:[{person:position,position,dateTime:'2026-10-23 09:00:00',actionType:1,department:'Ошарская 8А'},{person:position,position,dateTime:'2026-10-23 19:00:00',actionType:0,department:'Ошарская 8А'}]}],[])[0];
+  assert.equal(mapped[role],1,position);assert.equal(mapped.unclassified.length,0,position);
+}
+console.log('PASS: cloakroom, runners, animators, managers and hostesses map to hall; sommeliers and bar managers map to bar');

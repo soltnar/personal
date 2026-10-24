@@ -202,9 +202,9 @@ function isNonRestaurantDepartment(value) {
 function classifyRole(roleText) {
   const role = normalize(roleText);
   if (/повар|шеф/.test(role)) return "Кухня";
-  if (/официант|менеджер зала|мойщ|мойк|администратор|кассир|оператор/.test(role)) return "Зал";
+  if (/барменедж|барбэк|барбек|бармен|сомелье/.test(role)) return "Бар";
+  if (/официант|менеджер зала|мойщ|мойк|администратор|кассир|оператор|гардеробщ|раннер|ранер|аниматор|хостес/.test(role) || /^менеджер(?:\s|[.(]|$)/.test(role)) return "Зал";
   if (/логист|курьер|водител/.test(role)) return "Доставка";
-  if (/барменедж|барбэк|барбек|бармен/.test(role)) return "Бар";
   return null;
 }
 
