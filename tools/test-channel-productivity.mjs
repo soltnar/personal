@@ -14,3 +14,7 @@ const grant=restrictRows(rows,[{restaurant:cc.restaurant,roles:['hall']}],false)
 assert.equal(restrictRows(rows,[{restaurant:hall.restaurant,roles:['hall']}],false)[0].hallRevenue,191894.56);
 const missing=summarizeAttendance(days,sales).find(row=>row.restaurant===hall.restaurant);assert.equal(missing.hallRevenue,null,'Never use gross revenue when delivery is unknown');
 console.log('PASS: hall excludes delivery, call-centre staff separated, full-network totals independent of gross revenue, legacy access preserved, missing source excluded');
+
+const excluded=summarizeAttendance([{work_date:date,rows:marks('Самурай Ленина 36','логист').map(event=>({...event,person:'Кислицын Сергей Александрович'}))}],[])[0];
+assert.equal(excluded.delivery,0);assert.equal(excluded.total,0);assert.equal(excluded.details.delivery.length,0);
+console.log('PASS: owner-excluded Gazelle driver does not enter delivery staffing or productivity');

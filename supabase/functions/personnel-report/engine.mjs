@@ -287,6 +287,8 @@ export function summarizeAttendance(days, revenues, deliveryOrders = [], network
         row.hasConflict=true;
         continue;
       }
+      // Owner-confirmed Gazelle driver; does not deliver restaurant orders.
+      if(event.group==="delivery"&&normalizeFio(event.person)==="кислицын сергей александрович")continue;
       if (!shift) continue;
       row[event.group]+=shift; row.total+=shift;
       const reviewReason = !exit ? "нет отметки выхода" : restaurant==="Подразделение не определено" ? "точка не определена" : "";
