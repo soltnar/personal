@@ -73,3 +73,16 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
   .roleTotals:has(.deliveryMetric)>div:nth-child(even){padding-right:0}
   .roleTotals .deliveryNote,.roleTotals:has(.deliveryMetric) .qualityLink{grid-column:1/-1;margin:0}
 }
+
+#resultTable.deliveryTable th:first-child{width:35%}
+#resultTable.deliveryTable th:nth-child(2){width:10%}
+#resultTable.deliveryTable th:nth-child(3){width:22%}
+#resultTable.deliveryTable th:nth-child(4){width:14%}
+#resultTable.deliveryTable th:nth-child(5){width:15%}
+.ordersShiftCell small{display:none}
+@media(max-width:600px){
+  #resultTable.deliveryTable .compactSiteRow td:first-child{width:50%}
+  #resultTable.deliveryTable .compactSiteRow td:nth-child(4){width:23%;font-size:11px}
+  #resultTable.deliveryTable .compactSiteRow td.ordersShiftCell{width:22%;font-size:12px}
+  .ordersShiftCell small{display:block;font-size:9px;color:var(--muted);margin-top:4px;white-space:normal}
+}

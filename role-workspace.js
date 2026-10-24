@@ -51,22 +51,28 @@ function renderRoleReport(rows){
   renderCompactTable();csvBtn.disabled=!rows.length;xlsxBtn.disabled=!rows.length;syncCompactToolbar();
 }
 function deliveryRowVisible(row){return row.delivery>0||row.deliveryOrders>0||row.deliveryRevenue>0;}
+function deliveryOrdersPerShift(row){
+  const days=(row.dailyRows||[row]).filter(day=>Number.isFinite(day.deliveryOrders)&&day.delivery>0);
+  const shifts=days.reduce((n,day)=>n+day.delivery,0);
+  return shifts?days.reduce((n,day)=>n+day.deliveryOrders,0)/shifts:null;
+}
 function renderCompactTable(){
   const role=activeReportRole,query=document.getElementById('siteSearch').value.trim().toLocaleLowerCase('ru');
   const rows=compactRows.filter(row=>(role==='all'||reportRoleAllowed(row,role))&&(role!=='delivery'||deliveryRowVisible(row))&&row.restaurant.toLocaleLowerCase('ru').includes(query));
-  const heads=['Предприятие','Смены',role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':role==='delivery'?'Сумма заказов доставки':'Общая выручка',role==='all'?'Проверка':'₽/смену',''];
+  const heads=['Предприятие','Смены',role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':role==='delivery'?'Сумма заказов доставки':'Общая выручка',role==='all'?'Проверка':'₽/смену',...(role==='delivery'?['Заказов / смену']:[]),''];
+  document.getElementById('resultTable').classList.toggle('deliveryTable',role==='delivery');
   document.querySelector('#resultTable thead tr').innerHTML=heads.map((label,index)=>`<th scope="col">${label||'<span class="srOnly">Подробнее</span>'}</th>`).join('');
   tableBody.replaceChildren();
   for(const row of rows){
     const index=compactRows.indexOf(row),production=isProductionEnterprise(row),shifts=role==='all'?row.total:row[role],revenue=production?null:row[role==='all'?'revenue':roleRevenue[role]];
     const reviews=reportReviewCount(row,role),sample=role==='all'?null:row.coverage?.[role]||productivitySample(row,role);
-    const warning=reviews+(sample?.missing||0);
+    const warning=reviews+(sample?.missing||0),ordersPerShift=role==='delivery'?deliveryOrdersPerShift(row):null;
     const tr=document.createElement('tr');tr.className='compactSiteRow';tr.dataset.siteIndex=String(index);
     const title=escapeHtml(row.restaurant),subtitle=`${row.dateIso?prettyDate(row.dateIso)+' · ':''}${formatShift(shifts)} смен${role==='delivery'&&Number.isFinite(row.deliveryOrders)?' · '+formatMoney(row.deliveryOrders)+' заказов':''}${production?' · Производство':Number.isFinite(revenue)?' · '+formatMoney(revenue)+' ₽':''}`;
-    tr.innerHTML=`<td><button type="button" class="siteOpen" data-site-index="${index}" aria-label="Открыть ${title}"><strong>${title}</strong>${warning?`<span class="qualityDot" title="Отметки требуют проверки: ${reviews}; пропуски выручки: ${sample?.missing||0}" aria-label="Проверить: ${warning}">${warning}</span>`:''}<small>${escapeHtml(subtitle)}</small></button></td><td>${formatShift(shifts)}</td><td>${production?'<span class="productionText">Производство</span>':Number.isFinite(revenue)?formatMoney(revenue)+' ₽':'<span class="missingText">Нет данных</span>'}</td><td>${role==='all'?(reviews?`<span class="missingText">${reviews}</span>`:'—'):formatProductivity(row,role)}</td><td><i data-feather="chevron-right" aria-hidden="true"></i></td>`;
+    tr.innerHTML=`<td><button type="button" class="siteOpen" data-site-index="${index}" aria-label="Открыть ${title}"><strong>${title}</strong>${warning?`<span class="qualityDot" title="Отметки требуют проверки: ${reviews}; пропуски выручки: ${sample?.missing||0}" aria-label="Проверить: ${warning}">${warning}</span>`:''}<small>${escapeHtml(subtitle)}</small></button></td><td>${formatShift(shifts)}</td><td>${production?'<span class="productionText">Производство</span>':Number.isFinite(revenue)?formatMoney(revenue)+' ₽':'<span class="missingText">Нет данных</span>'}</td><td>${role==='all'?(reviews?`<span class="missingText">${reviews}</span>`:'—'):formatProductivity(row,role)}</td>${role==='delivery'?`<td class="ordersShiftCell">${Number.isFinite(ordersPerShift)?ordersPerShift.toLocaleString('ru-RU',{maximumFractionDigits:1}):'—'}<small>заказов / смену</small></td>`:''}<td><i data-feather="chevron-right" aria-hidden="true"></i></td>`;
     tableBody.append(tr);
   }
-  if(!rows.length)tableBody.innerHTML=`<tr><td colspan="5" class="initialEmpty"><strong>${compactRows.length?'Предприятия не найдены':'Откройте отчёт'}</strong><span>${compactRows.length?'Измените поиск или фильтры.':'Выберите период и нажмите «Показать».'}</span></td></tr>`;
+  if(!rows.length)tableBody.innerHTML=`<tr><td colspan="${heads.length}" class="initialEmpty"><strong>${compactRows.length?'Предприятия не найдены':'Откройте отчёт'}</strong><span>${compactRows.length?'Измените поиск или фильтры.':'Выберите период и нажмите «Показать».'}</span></td></tr>`;
   summaryEl.textContent=`${rows.length} ${rows.length===1?'предприятие':'предприятий'}${loadedReportPeriod?' · '+shortPeriod(loadedReportPeriod.from,loadedReportPeriod.to):''}`;
   refreshIcons();
 }
