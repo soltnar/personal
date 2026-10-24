@@ -111,3 +111,13 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 @media(max-width:600px){
  .overviewPanel .metrics>div,.overviewPanel .metrics>div:first-child{padding:12px}
 }
+
+@media(min-width:1100px){
+ .app .reportControls{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;width:max-content;max-width:min(600px,100%)}
+ .reportControls>.toolbarPopover:first-child{min-width:0;max-width:260px}
+ .reportControls>.toolbarPopover:first-child>summary{min-width:0}
+ .reportControls #periodLabel{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .reportControls #periodPicker>summary>.feather{flex-shrink:0}
+ .reportControls .statusGroup{grid-column:1/-1}
+ .reportControls.periodDirty:after{grid-column:1/-1}
+}

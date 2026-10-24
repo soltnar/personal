@@ -9,7 +9,9 @@ function shortPeriod(from,to){
   const label=iso=>new Date(`${iso}T12:00:00Z`).toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric',timeZone:'Europe/Moscow'});
   if(!from||!to)return 'Выбрать период';
   if(from===to)return `${from===yesterdayMoscow()?'Вчера · ':''}${label(from)}`;
-  return `${label(from)} — ${label(to)}`;
+  if(from.slice(0,7)===to.slice(0,7))return `${Number(from.slice(8))}–${label(to)}`;
+  const start=from.slice(0,4)===to.slice(0,4)?new Date(`${from}T12:00:00Z`).toLocaleDateString('ru-RU',{day:'numeric',month:'short',timeZone:'Europe/Moscow'}):label(from);
+  return `${start} — ${label(to)}`;
 }
 function setLoadedPeriod(from,to){loadedReportPeriod={from,to};syncCompactToolbar();}
 function syncCompactToolbar(){
