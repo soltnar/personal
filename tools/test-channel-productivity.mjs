@@ -18,3 +18,12 @@ console.log('PASS: hall excludes delivery, call-centre staff separated, full-net
 const excluded=summarizeAttendance([{work_date:date,rows:marks('Самурай Ленина 36','логист').map(event=>({...event,person:'Кислицын Сергей Александрович'}))}],[])[0];
 assert.equal(excluded.delivery,0);assert.equal(excluded.total,0);assert.equal(excluded.details.delivery.length,0);
 console.log('PASS: owner-excluded Gazelle driver does not enter delivery staffing or productivity');
+
+assert.equal(excluded.unclassified.length,1);
+assert.equal(excluded.unclassified[0].excludedFromDelivery,true);
+assert.equal(excluded.unclassified[0].marks.length,2);
+assert.equal(excluded.unclassified[0].marks[0].location,'Ленина, 36 Самурай');
+assert.match(excluded.unclassified[0].reviewReason,/Водитель газели/);
+assert.equal(restrictRows([excluded],[],true)[0].unclassified.length,1);
+assert(!Object.hasOwn(restrictRows([excluded],[{restaurant:excluded.restaurant,roles:['delivery']}],false)[0],'unclassified'));
+console.log('PASS: excluded driver retains locations and entrance/exit marks in owner review without adding delivery shifts');

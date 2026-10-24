@@ -288,7 +288,11 @@ export function summarizeAttendance(days, revenues, deliveryOrders = [], network
         continue;
       }
       // Owner-confirmed Gazelle driver; does not deliver restaurant orders.
-      if(event.group==="delivery"&&normalizeFio(event.person)==="кислицын сергей александрович")continue;
+      if(event.group==="delivery"&&normalizeFio(event.person)==="кислицын сергей александрович"){
+        row.unclassified.push({person:event.person,position:event.position||"Должность не указана",shift,hasConflict:true,excludedFromDelivery:true,reviewReason:"Водитель газели — исключён из расчётов доставки",marks:events.map(e=>({dateTime:e.dateTime,actionType:e.actionType,location:place(e)}))});
+        row.hasConflict=true;
+        continue;
+      }
       if (!shift) continue;
       row[event.group]+=shift; row.total+=shift;
       const reviewReason = !exit ? "нет отметки выхода" : restaurant==="Подразделение не определено" ? "точка не определена" : "";
