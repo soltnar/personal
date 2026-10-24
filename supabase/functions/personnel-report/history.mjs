@@ -11,5 +11,8 @@ export async function readHistoryMetrics(from,to,env,request=fetch){
   if(!response.ok||!Array.isArray(payload.metrics)||!Array.isArray(payload.completeDates))throw new Error('Не загружены дни истории заказов');
   for(let date=from;date<=to;date=new Date(Date.parse(date)+86400000).toISOString().slice(0,10))if(!payload.completeDates.includes(date))throw new Error('Неполный период истории заказов');
   for(const metric of payload.metrics)if(!payload.completeDates.includes(metric.dateIso)||typeof metric.restaurant!=='string'||!Number.isInteger(metric.orders)||metric.orders<0||(metric.revenue!==null&&!Number.isFinite(metric.revenue)))throw new Error('Некорректные данные истории заказов');
+  if(!Array.isArray(payload.network))throw new Error('Нет суммы заказов сети');
+  for(const day of payload.network)if(!payload.completeDates.includes(day.dateIso)||!Number.isInteger(day.orders)||day.orders<0||(day.revenue!==null&&!Number.isFinite(day.revenue)))throw new Error('Некорректные итоги сети');
+  if(payload.completeDates.some(date=>!payload.network.some(day=>day.dateIso===date)))throw new Error('Неполные итоги сети');
   return payload;
 }

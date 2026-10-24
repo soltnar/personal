@@ -61,12 +61,12 @@ Deno.serve(async(req)=>{
     const missing=[];
     for(let d=from;d<=to;d=new Date(Date.parse(d)+86400000).toISOString().slice(0,10)) if(!days.some(day=>day.work_date===d&&day.status==='ready')) missing.push(d);
     if(missing.length) return json({error:`Не готовы дни проходной: ${missing.join(', ')}. Обновите период в настройках.`,missingDates:missing},409);
-    let deliveryMetrics=[],deliveryError='',deliveryCompleteDates=[];
-    if(admin||grants.some(grant=>grant.roles.includes('delivery'))){
-      try{const history=await readHistoryMetrics(from,to,key=>Deno.env.get(key));deliveryMetrics=history.metrics;deliveryCompleteDates=history.completeDates;}
+    let deliveryMetrics=[],deliveryError='',deliveryCompleteDates=[],network=[];
+    if(admin||grants.some(grant=>grant.roles.some(role=>['delivery','hall','operators'].includes(role)))){
+      try{const history=await readHistoryMetrics(from,to,key=>Deno.env.get(key));deliveryMetrics=history.metrics;deliveryCompleteDates=history.completeDates;network=history.network||[];}
       catch(error){console.error(error);deliveryError='Заказы доставки не загружены. Сумма и количество доставки не рассчитаны. Повторите загрузку отчёта.';}
     }
-    const summary=summarizeAttendance(days,sales,deliveryMetrics);
+    const summary=summarizeAttendance(days,sales,deliveryMetrics,network,deliveryCompleteDates);
     for(const row of summary)if(deliveryCompleteDates.includes(row.dateIso)&&row.deliveryOrders===null){row.deliveryOrders=0;row.deliveryRevenue=0;}
     const rows=restrictRows(summary,grants,admin);
     return json({rows,admin,email,deliveryError,generatedAt:new Date().toISOString(),from,to});

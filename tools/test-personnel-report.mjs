@@ -28,7 +28,7 @@ globalThis.fetch=async(url,init={})=>{
   if(String(url).includes('/personnel_access')&&init.method==='POST')lastGrantWrite=JSON.parse(init.body);
   const path=new URL(url).pathname;
   let body;
-  if(new URL(url).hostname==='history.ilgp.ru')body={metrics:[],completeDates:['2026-10-14']};
+  if(new URL(url).hostname==='history.ilgp.ru')body={metrics:[],completeDates:['2026-10-14'],network:[{dateIso:'2026-10-14',orders:0,revenue:0}]};
   else if(path==='/oauth/service/')body={token:'test'};
   else if(new URL(url).hostname==='rest.saby.ru')body={result:{s:[],d:[],n:false}};
   else if(path.includes('personnel_saby_sessions'))body=[{subject:'456:123'}];

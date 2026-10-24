@@ -251,13 +251,13 @@ function workedSecondsToShift(workedSeconds) {
 }
 
 
-export const roleKeys = ["kitchen","hall","delivery","bar"];
+export const roleKeys = ["kitchen","hall","delivery","bar","operators"];
 const groups = {"Кухня":"kitchen","Зал":"hall","Доставка":"delivery","Бар":"bar"};
-export function summarizeAttendance(days, revenues, deliveryOrders = []) {
+export function summarizeAttendance(days, revenues, deliveryOrders = [], network = [], completeDates = []) {
   const result = new Map();
   const get = (dateIso,restaurant) => {
     const key = dateIso+"|"+restaurant;
-    if (!result.has(key)) result.set(key,{dateIso,restaurant,kitchen:0,hall:0,delivery:0,bar:0,total:0,revenue:null,kitchenRevenue:null,barRevenue:null,unifiedRevenue:null,kitchenRevenueSource:"kitchen",hasConflict:false,unclassified:[],deliveryRevenue:null,deliveryOrders:null,details:{kitchen:[],hall:[],delivery:[],bar:[]}});
+    if (!result.has(key)) result.set(key,{dateIso,restaurant,kitchen:0,hall:0,delivery:0,bar:0,operators:0,total:0,revenue:null,kitchenRevenue:null,barRevenue:null,unifiedRevenue:null,kitchenRevenueSource:"kitchen",hasConflict:false,unclassified:[],deliveryRevenue:null,deliveryOrders:null,hallRevenue:null,operatorsRevenue:null,operatorsOrders:null,details:{kitchen:[],hall:[],delivery:[],bar:[],operators:[]}});
     return result.get(key);
   };
   for (const day of days) {
@@ -277,7 +277,8 @@ export function summarizeAttendance(days, revenues, deliveryOrders = []) {
       const exit = exits.at(-1);
       const location = exit ? place(exit) : locations.size===1 ? [...locations][0] : "";
       const restaurant = location && !isNonRestaurantDepartment(location) ? location : "Подразделение не определено";
-      const event = exit || events.at(-1);
+      const event = {...(exit || events.at(-1))};
+      if(restaurant==="Коминтерна 166 CALL CENTRE"&&event.group==="hall")event.group="operators";
       const worked = calcWorkedSeconds(events.map(e=>({direction:Number(e.actionType)===1?"Вход":"Выход",absSec:Date.parse(e.dateTime.replace(" ","T")+"+03:00")/1000})));
       const shift = workedSecondsToShift(worked);
       const row = get(day.work_date,restaurant);
@@ -311,6 +312,15 @@ export function summarizeAttendance(days, revenues, deliveryOrders = []) {
     row.deliveryOrders=(row.deliveryOrders??0)+metric.orders;
     row.deliveryRevenue=first?metric.revenue:row.deliveryRevenue===null||metric.revenue===null?null:row.deliveryRevenue+metric.revenue;
   }
+  for(const row of result.values()){
+    if(completeDates.includes(row.dateIso)&&row.deliveryOrders===null){row.deliveryOrders=0;row.deliveryRevenue=0;}
+    if(row.restaurant!=="Коминтерна 166 CALL CENTRE"){
+      row.hallRevenue=Number.isFinite(row.revenue)&&Number.isFinite(row.deliveryRevenue)&&row.revenue>=row.deliveryRevenue?Math.round((row.revenue-row.deliveryRevenue)*100)/100:null;
+    }else{
+      const total=network.find(day=>day.dateIso===row.dateIso);
+      row.operatorsRevenue=total?.revenue??null;row.operatorsOrders=total?.orders??null;
+    }
+  }
   const unifiedKitchen=new Set(["Кварц, Гагарина, 224А","Моторный, 2/1 доставка Самурай","Коминтерна 166 CALL CENTRE"]);
   for(const row of result.values()) if(unifiedKitchen.has(row.restaurant)&&row.kitchenRevenue===null&&Number.isFinite(row.unifiedRevenue)){
     row.kitchenRevenue=row.unifiedRevenue;row.kitchenRevenueSource="unified";
@@ -320,7 +330,8 @@ export function summarizeAttendance(days, revenues, deliveryOrders = []) {
 export function restrictRows(rows, grants, admin) {
   grants=grants.map(g=>({...g,restaurant:canonicalRestaurantName(g.restaurant)}));
   return rows.filter(row=>admin || grants.some(g=>g.restaurant===row.restaurant)).map(row=>{
-    const allowedRoles=admin?roleKeys:grants.filter(g=>g.restaurant===row.restaurant).flatMap(g=>g.roles);
+    const callCentre=row.restaurant==="Коминтерна 166 CALL CENTRE";
+    const allowedRoles=(admin?roleKeys:grants.filter(g=>g.restaurant===row.restaurant).flatMap(g=>g.roles).map(role=>callCentre&&role==="hall"?"operators":role)).filter(role=>callCentre?role!=="hall":role!=="operators");
     const copy={dateIso:row.dateIso,restaurant:row.restaurant,allowedRoles,details:{},total:0,hasConflict:false};
     for(const key of roleKeys) if(allowedRoles.includes(key)) {
       copy[key]=row[key]; copy.total+=row[key]; copy.details[key]=row.details[key];
@@ -328,7 +339,8 @@ export function restrictRows(rows, grants, admin) {
     }
     if(allowedRoles.includes("kitchen")) {copy.kitchenRevenue=row.kitchenRevenue;copy.kitchenRevenueSource=row.kitchenRevenueSource;}
     if(allowedRoles.includes("bar")) copy.barRevenue=row.barRevenue;
-    if(allowedRoles.includes("hall")) copy.revenue=row.revenue;
+    if(allowedRoles.includes("hall")){copy.revenue=row.revenue;copy.hallRevenue=row.hallRevenue;}
+    if(allowedRoles.includes("operators")){copy.operatorsRevenue=row.operatorsRevenue;copy.operatorsOrders=row.operatorsOrders;}
     if(allowedRoles.includes("delivery")){copy.deliveryRevenue=row.deliveryRevenue;copy.deliveryOrders=row.deliveryOrders;}
     if(admin){copy.revenue=row.revenue;copy.unclassified=row.unclassified||[];copy.hasConflict ||= copy.unclassified.length>0;}
     return copy;

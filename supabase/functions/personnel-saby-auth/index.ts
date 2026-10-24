@@ -34,7 +34,7 @@ Deno.serve(async(req)=>{
       }
       if(body.operation==='grant'){
         const roles=body.roles,restaurant=String(body.restaurant||'').trim();
-        if(!Array.isArray(roles)||roles.some(r=>!['kitchen','hall','bar','delivery'].includes(r))||restaurant.length<3||restaurant.length>200)return json({error:'Проверьте предприятие и разделы'},400);
+        if(!Array.isArray(roles)||roles.some(r=>!['kitchen','hall','bar','delivery','operators'].includes(r))||restaurant.length<3||restaurant.length>200)return json({error:'Проверьте предприятие и разделы'},400);
         if(!roles.length)await db(`personnel_saby_access?subject=eq.${encodeURIComponent(subject)}&restaurant=eq.${encodeURIComponent(restaurant)}`,{method:'DELETE'});
         else await db('personnel_saby_access?on_conflict=subject,restaurant',{method:'POST',body:JSON.stringify({subject,restaurant,roles:[...new Set(roles)]})});
         return json({ok:true});

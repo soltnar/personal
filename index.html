@@ -8,11 +8,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Персонал" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" type="image/svg+xml" href="icon.svg?v=5.0.7" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg?v=5.0.8" />
   <link rel="icon" type="image/png" sizes="32x32" href="personnel-icon-32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="personnel-icon-180.png" />
-  <link rel="stylesheet" href="styles.css?v=5.0.7" />
-  <link rel="stylesheet" href="role-workspace.css?v=5.0.7" />
+  <link rel="stylesheet" href="styles.css?v=5.0.8" />
+  <link rel="stylesheet" href="role-workspace.css?v=5.0.8" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -93,7 +93,7 @@
         <h3 class="panelTitle">Пользователи Saby</h3><p class="hint">После первого входа сотрудник появляется здесь без доступа. Разрешите вход и назначьте предприятия и разделы. Google-права по email не переносятся автоматически.</p>
         <button id="sabyUsersReload" class="secondaryBtn" type="button">Обновить пользователей и назначения</button>
         <div id="sabyUserList"></div>
-        <form id="sabyGrantForm" class="accessForm"><label>Пользователь<select id="sabyAccessUser" required></select></label><label>Предприятие<select id="sabyAccessRestaurant" required></select></label><div class="accessRoles"><label><input type="checkbox" name="sabyRole" value="kitchen">Кухня</label><label><input type="checkbox" name="sabyRole" value="hall">Зал</label><label><input type="checkbox" name="sabyRole" value="bar">Бар</label><label><input type="checkbox" name="sabyRole" value="delivery">Доставка</label></div><button type="submit">Назначить доступ Saby</button></form>
+        <form id="sabyGrantForm" class="accessForm"><label>Пользователь<select id="sabyAccessUser" required></select></label><label>Предприятие<select id="sabyAccessRestaurant" required></select></label><div class="accessRoles"><label><input type="checkbox" name="sabyRole" value="kitchen">Кухня</label><label><input type="checkbox" name="sabyRole" value="hall">Зал</label><label><input type="checkbox" name="sabyRole" value="bar">Бар</label><label><input type="checkbox" name="sabyRole" value="delivery">Доставка</label><label><input type="checkbox" name="sabyRole" value="operators">Операторы</label></div><button type="submit">Назначить доступ Saby</button></form>
         <p class="hint">Список предприятий берётся из справочника. Блокировка пользователя завершает его сеансы приложения.</p>
         <p id="sabyAdminStatus" role="status"></p>
       </div>
@@ -105,7 +105,7 @@
         <form id="accessForm" class="accessForm">
           <label>Email сотрудника<input id="accessEmail" type="email" required autocomplete="off"></label>
           <fieldset class="accessVenuePicker"><legend>Предприятия</legend><div class="accessVenueToolbar"><button id="accessAllVenues" type="button" class="textBtn">Все 18 ресторанов</button><button id="accessNoVenues" type="button" class="textBtn">Снять выбор</button><span id="accessVenueCount" class="hint">Не выбраны</span></div><div id="accessVenueChecklist" class="restaurantChecklist"></div><select id="accessRestaurant" multiple hidden aria-hidden="true"></select></fieldset>
-          <div class="accessRoles"><label><input type="checkbox" name="accessRole" value="kitchen">Кухня</label><label><input type="checkbox" name="accessRole" value="hall">Зал</label><label><input type="checkbox" name="accessRole" value="bar">Бар</label><label><input type="checkbox" name="accessRole" value="delivery">Доставка</label></div>
+          <div class="accessRoles"><label><input type="checkbox" name="accessRole" value="kitchen">Кухня</label><label><input type="checkbox" name="accessRole" value="hall">Зал</label><label><input type="checkbox" name="accessRole" value="bar">Бар</label><label><input type="checkbox" name="accessRole" value="delivery">Доставка</label><label><input type="checkbox" name="accessRole" value="operators">Операторы</label></div>
           <button type="submit">Сохранить доступ</button>
         </form>
       </div>
@@ -142,6 +142,7 @@
               <label class="roleOption"><input type="checkbox" class="groupCheck" value="Кухня" checked><span><strong>Кухня</strong><small>Повара, шефы, су-шефы</small></span></label>
               <label class="roleOption"><input type="checkbox" class="groupCheck" value="Зал" checked><span><strong>Зал</strong><small>Официанты, менеджеры, кассиры</small></span></label>
               <label class="roleOption"><input type="checkbox" class="groupCheck" value="Доставка" checked><span><strong>Доставка</strong><small>Логисты, курьеры, водители</small></span></label>
+              <label class="roleOption"><input type="checkbox" class="groupCheck" value="Операторы" checked><span><strong>Операторы</strong><small>Колл-центр сети</small></span></label>
               <label class="roleOption"><input type="checkbox" class="groupCheck" value="Бар" checked><span><strong>Бар</strong><small>Бармены, менеджеры, барбэки</small></span></label>
             </div>
           </fieldset>
@@ -179,12 +180,12 @@
   <nav class="mobileNav" aria-label="Мобильная навигация"><a href="#overview" data-mobile-view="overview"><i data-feather="bar-chart-2" aria-hidden="true"></i>Обзор</a><a href="#enterprises" data-mobile-view="enterprises"><i data-feather="map-pin" aria-hidden="true"></i>Точки</a><a href="#quality" data-mobile-view="quality"><i data-feather="check-square" aria-hidden="true"></i>Проверка</a><button id="mobileMore" type="button"><i data-feather="more-horizontal" aria-hidden="true"></i>Ещё</button></nav>
   <dialog id="siteDialog" class="siteDialog" aria-labelledby="siteDialogTitle"><header><div><small id="siteDialogPeriod"></small><h2 id="siteDialogTitle"></h2></div><button id="closeSiteDialog" type="button" class="secondaryBtn" aria-label="Закрыть детали"><i data-feather="x" aria-hidden="true"></i></button></header><div id="siteDialogBody"></div></dialog>
 
-  <script src="script.js?v=5.0.7"></script>
-  <script src="report-ui.js?v=5.0.7"></script>
-  <script src="saby-login.js?v=5.0.7"></script>
-  <script src="workspace.js?v=5.0.7"></script>
-  <script src="access-ui.js?v=5.0.7"></script>
+  <script src="script.js?v=5.0.8"></script>
+  <script src="report-ui.js?v=5.0.8"></script>
+  <script src="saby-login.js?v=5.0.8"></script>
+  <script src="workspace.js?v=5.0.8"></script>
+  <script src="access-ui.js?v=5.0.8"></script>
   <script src="vendor/feather.min.js"></script>
-  <script src="role-workspace.js?v=5.0.7"></script>
+  <script src="role-workspace.js?v=5.0.8"></script>
 </body>
 </html>

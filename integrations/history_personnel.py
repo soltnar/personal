@@ -39,8 +39,11 @@ def handle_personnel(handler, build_payload):
             handler.send_json({'error': 'Нет сохранённых дней истории заказов', 'missingDates': missing}, status=409)
             return True
         metrics = []
+        network = []
         for report in reports:
             payload = build_payload(Path(report['filename']))
+            all_amounts = [order.get('amount') for order in payload['orders']]
+            network.append({'dateIso':report['day'],'orders':len(all_amounts),'revenue':float(sum((Decimal(str(v)) for v in all_amounts),Decimal(0))) if all(v is not None for v in all_amounts) else None})
             # Use the same restaurant/channel split and amounts as the History UI.
             grouped = defaultdict(list)
             for order in payload['orders']:
@@ -52,7 +55,7 @@ def handle_personnel(handler, build_payload):
                 metrics.append({'dateIso': report['day'], 'restaurant': restaurant,
                                 'orders': len(orders),
                                 'revenue': float(sum((Decimal(str(v)) for v in amounts), Decimal(0))) if all(v is not None for v in amounts) else None})
-        handler.send_json({'metrics': metrics, 'completeDates': sorted(present), 'source': 'order-history'})
+        handler.send_json({'metrics': metrics, 'network': network, 'completeDates': sorted(present), 'source': 'order-history'})
     except (ValueError, KeyError, IndexError):
         handler.send_json({'error': 'Invalid period'}, status=400)
     except Exception:
