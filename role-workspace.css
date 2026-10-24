@@ -96,3 +96,18 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
  .roleTotals:has(.deliveryMetric)>div:nth-child(2) strong,
  .roleTotals:has(.deliveryMetric)>div:nth-child(2) strong small{font-size:clamp(17px,5vw,22px)}
 }
+
+/* Consistent summary card insets; keep five role metrics on wide screens. */
+.overviewPanel .metrics>div,.overviewPanel .metrics>div:first-child{padding:14px 18px 18px;min-width:0}
+.productivityGrid>p{grid-column:1/-1;margin:0}
+.productivityGrid article{min-width:0;display:flex;flex-direction:column}
+.productivityGrid article>small{flex:1}
+@media(min-width:1200px){
+ .overviewPanel .productivityGrid{grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
+ .overviewPanel .productivityGrid article{padding:10px 14px}
+ .overviewPanel .productivityGrid strong{font-size:clamp(20px,1.7vw,25px);white-space:nowrap}
+ .overviewPanel .productivityGrid small,.overviewPanel .productivityGrid article>p{line-height:1.5}
+}
+@media(max-width:600px){
+ .overviewPanel .metrics>div,.overviewPanel .metrics>div:first-child{padding:12px}
+}
