@@ -1,4 +1,4 @@
-const APP_VERSION = "5.0.3";
+const APP_VERSION = "5.0.4";
 let reportRows = null;
 let reportAdmin = false;
 const DAY_CUTOFF_SECONDS = 4 * 3600;

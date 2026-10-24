@@ -46,7 +46,7 @@ function renderRoleReport(rows){
   document.getElementById('activeRoleTitle').textContent=role==='all'?'Все разделы':roleLabels[role];
   document.getElementById('roleFormula').textContent=role==='all'?'Смены по выбранным разделам':roleDescriptions[role];
   const revenueTotal=summarizeReportRevenue(eligible).known.reduce((n,row)=>n+row.revenue,0);
-  document.getElementById('roleTotals').innerHTML=`<div><strong>${formatShift(shifts)} <small>смен</small></strong><span>${role==='all'?'Во всех выбранных разделах':`Всего: ${roleLabels[role].toLowerCase()}`}</span></div><div><strong>${role==='all'?(eligible.some(row=>Number.isFinite(row.revenue))?`${formatMoney(revenueTotal)} ₽`:'—'):sample.shifts>0?`${formatMoney(sample.revenue/sample.shifts)} <small>₽/смену</small>`:'—'}</strong><span>${role==='all'?'Общая выручка':'Выработка за дни с данными'}</span></div>${role==='delivery'?deliveryMetrics({dailyRows:eligible.flatMap(row=>row.dailyRows||[row]),deliveryOrders:eligible.some(row=>Number.isFinite(row.deliveryOrders))?eligible.reduce((n,row)=>n+(row.deliveryOrders||0),0):null}):''}${sample.missing?`<button type="button" id="roleGaps" class="qualityLink">Без выручки: ${sample.missing} предприятие-дней</button>`:''}`;
+  document.getElementById('roleTotals').innerHTML=`<div><strong>${formatShift(shifts)} <small>смен</small></strong><span>${role==='all'?'Во всех выбранных разделах':`Всего: ${roleLabels[role].toLowerCase()}`}</span></div><div><strong>${role==='all'?(eligible.some(row=>Number.isFinite(row.revenue))?`${formatMoney(revenueTotal)} ₽`:'—'):sample.shifts>0?`${formatMoney(sample.revenue/sample.shifts)} <small>₽/смену</small>`:'—'}</strong><span>${role==='all'?'Общая выручка':'Выработка за дни с данными'}</span></div>${role==='delivery'?deliveryMetrics({dailyRows:eligible.flatMap(row=>row.dailyRows||[row]),deliveryOrders:eligible.some(row=>Number.isFinite(row.deliveryOrders))?eligible.reduce((n,row)=>n+(row.deliveryOrders||0),0):null},true):''}${sample.missing?`<button type="button" id="roleGaps" class="qualityLink">Без выручки: ${sample.missing} предприятие-дней</button>`:''}`;
   document.getElementById('roleGaps')?.addEventListener('click',()=>navigateWorkspace('quality'));
   renderCompactTable();csvBtn.disabled=!rows.length;xlsxBtn.disabled=!rows.length;syncCompactToolbar();
 }
@@ -75,7 +75,12 @@ function openRoleDetail(row,day=''){
   detailState={row,day,role:allowed.includes(activeReportRole)?activeReportRole:allowed[0]||null};
   renderRoleDetail();const dialog=document.getElementById('siteDialog');if(!dialog.open)dialog.showModal();
 }
-function deliveryMetrics(row){
+function deliveryMetrics(row,summary=false){
+  if(summary){
+    const daily=row.dailyRows||[row],covered=daily.filter(day=>Number.isFinite(day.deliveryOrders)&&day.delivery>0);
+    const shifts=covered.reduce((n,day)=>n+day.delivery,0),orders=covered.reduce((n,day)=>n+day.deliveryOrders,0);
+    return `<div class="deliveryMetric"><strong>${Number.isFinite(row.deliveryOrders)?formatMoney(row.deliveryOrders):'—'}</strong><span>Заказы на курьеров</span></div><div class="deliveryMetric"><strong>${shifts?formatMoney(orders/shifts):'—'}</strong><span>Заказов / смену доставки</span></div><p class="deliveryNote">Смены доставки включают курьеров, водителей и логистов.</p>`;
+  }
   if(!Number.isFinite(row.deliveryOrders))return '<p class="hint">Количество курьерских заказов: нет данных.</p>';
   const daily=row.dailyRows||[row],covered=daily.filter(day=>Number.isFinite(day.deliveryOrders)&&day.delivery>0);
   const shifts=covered.reduce((n,day)=>n+day.delivery,0),orders=covered.reduce((n,day)=>n+day.deliveryOrders,0);
