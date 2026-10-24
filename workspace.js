@@ -102,6 +102,7 @@ function refreshWorkspaceReport(rows) {
     if((row.coverage?.[role] || productivitySample(row,role)).missing) gaps++;
     for(const person of row.details?.[role] || []) if(person.hasConflict) checks.push({row, person, label});
   }
+  for(const row of daily)for(const person of row.unclassified||[])checks.push({row,person,label:'Без категории'});
   const target = document.getElementById('attendanceReviews');
   target.replaceChildren();
   const heading = document.createElement('h3');heading.className = 'panelTitle';heading.textContent = `Отметки сотрудников · ${checks.length}`;target.append(heading);
@@ -110,7 +111,7 @@ function refreshWorkspaceReport(rows) {
   for(const {row,person,label} of checks) {
     const item = document.createElement('article'), content = document.createElement('div'), title = document.createElement('strong'), description = document.createElement('p'), button = document.createElement('button');
     title.textContent = `${row.restaurant} · ${prettyDate(row.dateIso)} · ${label}`;
-    description.textContent = `${person.person || 'Сотрудник'}${person.reviewReason ? ' · '+person.reviewReason : ''}`;
+    description.textContent = `${person.person || 'Сотрудник'}${person.position ? ' · '+person.position : ''}${person.marks?.length ? ' · Отметки: '+person.marks.map(mark=>mark.dateTime+' '+(Number(mark.actionType)===1?'вход':'выход')).join(', ') : ''}${person.reviewReason ? ' · '+person.reviewReason : ''}`;
     button.type='button';button.className='secondaryBtn';button.textContent='Открыть день';button.onclick=()=>openWorkspaceDay(row.restaurant,row.dateIso);
     content.append(title,description);item.append(content,button);list.append(item);
   }

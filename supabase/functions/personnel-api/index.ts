@@ -289,7 +289,7 @@ async function fetchAttendance(from: string, to: string, token: string, progress
         }
         return {
           rows: rowsFromResult(data.result),
-          hasMore: data.result?.n !== false,
+          hasMore: typeof data.result?.n === "boolean" ? data.result.n : null,
         };
       } catch (error) {
         if(error instanceof Error && error.name==='SabyRateLimitError')throw error;
@@ -306,8 +306,13 @@ async function fetchAttendance(from: string, to: string, token: string, progress
     if(page>0)await new Promise(resolve=>setTimeout(resolve,1600));
     const result = await fetchPage(page);
     pagesLoaded += 1;
+    if(result.hasMore===true&&!result.rows.length)throw new Error('Saby вернул пустую страницу с признаком продолжения');
+    const signature=JSON.stringify(result.rows);
+    for(let offset=0;result.rows.length&&offset<rows.length;offset+=PAGE_SIZE){
+      if(JSON.stringify(rows.slice(offset,offset+result.rows.length))===signature)throw new Error('Saby повторяет страницу проходной; загрузка остановлена без потери сохранённых страниц');
+    }
     rows.push(...result.rows);
-    const complete=result.rows.length < PAGE_SIZE || !result.hasMore;
+    const complete=result.hasMore===false || (result.hasMore===null&&result.rows.length<PAGE_SIZE);
     await saveProgress({next_page:page+1,rows,complete});
     if (complete) break;
     if (page === MAX_PAGES - 1) throw new Error("Превышен лимит страниц проходной");

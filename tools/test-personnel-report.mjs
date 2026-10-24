@@ -28,7 +28,9 @@ globalThis.fetch=async(url,init={})=>{
   if(String(url).includes('/personnel_access')&&init.method==='POST')lastGrantWrite=JSON.parse(init.body);
   const path=new URL(url).pathname;
   let body;
-  if(path.includes('personnel_saby_sessions'))body=[{subject:'456:123'}];
+  if(path==='/oauth/service/')body={token:'test'};
+  else if(new URL(url).hostname==='rest.saby.ru')body={result:{s:[],d:[],n:false}};
+  else if(path.includes('personnel_saby_sessions'))body=[{subject:'456:123'}];
   else if(path.includes('personnel_saby_users'))body=sabyEnabled?[{subject:'456:123',display_name:'Saby сотрудник'}]:[];
   else if(path.includes('personnel_saby_access'))body=grants;
   else if(path==='/auth/v1/user')body={email,email_confirmed_at:'2026-01-01'};

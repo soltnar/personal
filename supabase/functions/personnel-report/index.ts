@@ -1,4 +1,5 @@
 import { summarizeAttendance, restrictRows, roleKeys } from './engine.mjs';
+import { readDeliveryMetrics } from './delivery.mjs';
 import { readSabyIdentity } from './identity.ts';
 const URL_BASE = Deno.env.get('SUPABASE_URL')!;
 const KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -60,7 +61,12 @@ Deno.serve(async(req)=>{
     const missing=[];
     for(let d=from;d<=to;d=new Date(Date.parse(d)+86400000).toISOString().slice(0,10)) if(!days.some(day=>day.work_date===d&&day.status==='ready')) missing.push(d);
     if(missing.length) return json({error:`Не готовы дни проходной: ${missing.join(', ')}. Обновите период в настройках.`,missingDates:missing},409);
-    const rows=restrictRows(summarizeAttendance(days,sales),grants,admin);
-    return json({rows,admin,email,generatedAt:new Date().toISOString(),from,to});
+    let deliveryMetrics=[],deliveryError='';
+    if(admin||grants.some(grant=>grant.roles.includes('delivery'))){
+      try{deliveryMetrics=await readDeliveryMetrics(from,to,key=>Deno.env.get(key));}
+      catch(error){console.error(error);deliveryError='Заказы доставки не загружены. Сумма и количество доставки не рассчитаны. Повторите загрузку отчёта.';}
+    }
+    const rows=restrictRows(summarizeAttendance(days,sales,deliveryMetrics),grants,admin);
+    return json({rows,admin,email,deliveryError,generatedAt:new Date().toISOString(),from,to});
   }catch(error){console.error(error);return json({error:'Не удалось получить отчёт. Повторите попытку.'},500);}
 });

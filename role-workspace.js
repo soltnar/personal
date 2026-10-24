@@ -3,7 +3,7 @@ let activeReportRole='kitchen';
 let compactRows=[];
 let loadedReportPeriod=null;
 let detailState=null;
-const roleDescriptions={kitchen:'Выручка кухни / смены кухни',hall:'Общая выручка / смены зала',bar:'Выручка бара / смены бара',delivery:'Общая выручка / смены доставки'};
+const roleDescriptions={kitchen:'Выручка кухни / смены кухни',hall:'Общая выручка / смены зала',bar:'Выручка бара / смены бара',delivery:'Сумма заказов доставки / смены доставки; заказы / смены доставки'};
 function refreshIcons(){if(window.feather)window.feather.replace({'stroke-width':1.7,width:18,height:18});}
 function shortPeriod(from,to){
   const label=iso=>new Date(`${iso}T12:00:00Z`).toLocaleDateString('ru-RU',{day:'numeric',month:'short',year:'numeric',timeZone:'Europe/Moscow'});
@@ -46,14 +46,14 @@ function renderRoleReport(rows){
   document.getElementById('activeRoleTitle').textContent=role==='all'?'Все разделы':roleLabels[role];
   document.getElementById('roleFormula').textContent=role==='all'?'Смены по выбранным разделам':roleDescriptions[role];
   const revenueTotal=summarizeReportRevenue(eligible).known.reduce((n,row)=>n+row.revenue,0);
-  document.getElementById('roleTotals').innerHTML=`<div><strong>${formatShift(shifts)} <small>смен</small></strong><span>${role==='all'?'Во всех выбранных разделах':`Всего: ${roleLabels[role].toLowerCase()}`}</span></div><div><strong>${role==='all'?(eligible.some(row=>Number.isFinite(row.revenue))?`${formatMoney(revenueTotal)} ₽`:'—'):sample.shifts>0?`${formatMoney(sample.revenue/sample.shifts)} <small>₽/смену</small>`:'—'}</strong><span>${role==='all'?'Общая выручка':'Выработка за дни с данными'}</span></div>${sample.missing?`<button type="button" id="roleGaps" class="qualityLink">Без выручки: ${sample.missing} предприятие-дней</button>`:''}`;
+  document.getElementById('roleTotals').innerHTML=`<div><strong>${formatShift(shifts)} <small>смен</small></strong><span>${role==='all'?'Во всех выбранных разделах':`Всего: ${roleLabels[role].toLowerCase()}`}</span></div><div><strong>${role==='all'?(eligible.some(row=>Number.isFinite(row.revenue))?`${formatMoney(revenueTotal)} ₽`:'—'):sample.shifts>0?`${formatMoney(sample.revenue/sample.shifts)} <small>₽/смену</small>`:'—'}</strong><span>${role==='all'?'Общая выручка':'Выработка за дни с данными'}</span></div>${role==='delivery'?deliveryMetrics({dailyRows:eligible.flatMap(row=>row.dailyRows||[row]),deliveryOrders:eligible.some(row=>Number.isFinite(row.deliveryOrders))?eligible.reduce((n,row)=>n+(row.deliveryOrders||0),0):null}):''}${sample.missing?`<button type="button" id="roleGaps" class="qualityLink">Без выручки: ${sample.missing} предприятие-дней</button>`:''}`;
   document.getElementById('roleGaps')?.addEventListener('click',()=>navigateWorkspace('quality'));
   renderCompactTable();csvBtn.disabled=!rows.length;xlsxBtn.disabled=!rows.length;syncCompactToolbar();
 }
 function renderCompactTable(){
   const role=activeReportRole,query=document.getElementById('siteSearch').value.trim().toLocaleLowerCase('ru');
   const rows=compactRows.filter(row=>(role==='all'||reportRoleAllowed(row,role))&&row.restaurant.toLocaleLowerCase('ru').includes(query));
-  const heads=['Предприятие','Смены',role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':'Общая выручка',role==='all'?'Проверка':'₽/смену',''];
+  const heads=['Предприятие','Смены',role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':role==='delivery'?'Сумма заказов доставки':'Общая выручка',role==='all'?'Проверка':'₽/смену',''];
   document.querySelector('#resultTable thead tr').innerHTML=heads.map((label,index)=>`<th scope="col">${label||'<span class="srOnly">Подробнее</span>'}</th>`).join('');
   tableBody.replaceChildren();
   for(const row of rows){
@@ -61,7 +61,7 @@ function renderCompactTable(){
     const reviews=reportReviewCount(row,role),sample=role==='all'?null:row.coverage?.[role]||productivitySample(row,role);
     const warning=reviews+(sample?.missing||0);
     const tr=document.createElement('tr');tr.className='compactSiteRow';tr.dataset.siteIndex=String(index);
-    const title=escapeHtml(row.restaurant),subtitle=`${row.dateIso?prettyDate(row.dateIso)+' · ':''}${formatShift(shifts)} смен${production?' · Производство':Number.isFinite(revenue)?' · '+formatMoney(revenue)+' ₽':''}`;
+    const title=escapeHtml(row.restaurant),subtitle=`${row.dateIso?prettyDate(row.dateIso)+' · ':''}${formatShift(shifts)} смен${role==='delivery'&&Number.isFinite(row.deliveryOrders)?' · '+formatMoney(row.deliveryOrders)+' заказов':''}${production?' · Производство':Number.isFinite(revenue)?' · '+formatMoney(revenue)+' ₽':''}`;
     tr.innerHTML=`<td><button type="button" class="siteOpen" data-site-index="${index}" aria-label="Открыть ${title}"><strong>${title}</strong>${warning?`<span class="qualityDot" title="Отметки требуют проверки: ${reviews}; пропуски выручки: ${sample?.missing||0}" aria-label="Проверить: ${warning}">${warning}</span>`:''}<small>${escapeHtml(subtitle)}</small></button></td><td>${formatShift(shifts)}</td><td>${production?'<span class="productionText">Производство</span>':Number.isFinite(revenue)?formatMoney(revenue)+' ₽':'<span class="missingText">Нет данных</span>'}</td><td>${role==='all'?(reviews?`<span class="missingText">${reviews}</span>`:'—'):formatProductivity(row,role)}</td><td><i data-feather="chevron-right" aria-hidden="true"></i></td>`;
     tableBody.append(tr);
   }
@@ -74,11 +74,17 @@ function openRoleDetail(row,day=''){
   detailState={row,day,role:allowed.includes(activeReportRole)?activeReportRole:allowed[0]||null};
   renderRoleDetail();const dialog=document.getElementById('siteDialog');if(!dialog.open)dialog.showModal();
 }
+function deliveryMetrics(row){
+  if(!Number.isFinite(row.deliveryOrders))return '<p class="hint">Количество курьерских заказов: нет данных.</p>';
+  const daily=row.dailyRows||[row],covered=daily.filter(day=>Number.isFinite(day.deliveryOrders)&&day.delivery>0);
+  const shifts=covered.reduce((n,day)=>n+day.delivery,0),orders=covered.reduce((n,day)=>n+day.deliveryOrders,0);
+  return `<p class="hint">Заказы на курьеров: <strong>${formatMoney(row.deliveryOrders)}</strong> · Заказов / смену доставки: <strong>${shifts?formatMoney(orders/shifts):'—'}</strong>. Смены доставки включают курьеров, водителей и логистов.</p>`;
+}
 function detailMetrics(row,role){
   if(!role)return '';
   if(isProductionEnterprise(row))return `<div class="detailStats"><div><strong>${formatShift(row[role])}</strong><span>Смены</span></div><p class="hint">Производство. Только сотрудники и смены.</p></div>`;
   const field=roleRevenue[role],revenue=row[field],sample=row.coverage?.[role]||productivitySample(row,role);
-  return `<div class="detailStats"><div><strong>${formatShift(row[role])}</strong><span>Смены</span></div><div><strong>${Number.isFinite(revenue)?formatMoney(revenue)+' ₽':'—'}</strong><span>${role==='kitchen'?(row.kitchenRevenueSource==='unified'?'Выручка единого склада':'Выручка кухни'):role==='bar'?'Выручка бара':'Общая выручка'}</span></div><div><strong>${formatProductivity(row,role)}</strong><span>₽/смену</span></div></div>${sample.missing?`<p class="coverageWarning">Выработка не учитывает ${sample.missing} предприятие-дней без выручки (${formatShift(sample.missingShifts)} смен).</p>`:''}`;
+  return `<div class="detailStats"><div><strong>${formatShift(row[role])}</strong><span>Смены</span></div><div><strong>${Number.isFinite(revenue)?formatMoney(revenue)+' ₽':'—'}</strong><span>${role==='kitchen'?(row.kitchenRevenueSource==='unified'?'Выручка единого склада':'Выручка кухни'):role==='bar'?'Выручка бара':role==='delivery'?'Сумма заказов доставки':'Общая выручка'}</span></div><div><strong>${formatProductivity(row,role)}</strong><span>₽/смену</span></div></div>${role==='delivery'?deliveryMetrics(row):''}${sample.missing?`<p class="coverageWarning">Выработка не учитывает ${sample.missing} предприятие-дней без выручки (${formatShift(sample.missingShifts)} смен).</p>`:''}`;
 }
 function renderRoleDetail(){
   if(!detailState)return;

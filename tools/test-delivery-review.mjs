@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {readDeliveryMetrics} from '../supabase/functions/personnel-report/delivery.mjs';
+import {summarizeAttendance,restrictRows} from '../supabase/functions/personnel-report/engine.mjs';
+const order=(Sale,CourierName='Иван',TotalPrice=100)=>({Sale,CourierName,TotalPrice,DateWTZ:'2026-10-14 12:00:00',WarehouseName:'Самурай Белинского 61'});
+const record=value=>({s:Object.keys(value).map(n=>({n})),d:Object.values(value)});
+const result=(orders,more,position)=>({result:{s:Object.keys(orders[0]||{}).map(n=>({n})),d:orders.map(Object.values),n:record({HasMore:more,Position:position})}});
+let requests=0;
+const request=async(url,init)=>{
+  if(url.includes('oauth'))return Response.json({token:'token'});
+  const body=JSON.parse(init.body);assert.equal(body.params['Фильтр'].d[3],2);
+  requests++;
+  return Response.json(requests===1?result([order(1),order(2,'',500),order(3,'Петр',null)],true,record({NextDateWTZText:'cursor'})):result([order(1),order(4)],false,null));
+};
+const metrics=await readDeliveryMetrics('2026-10-14','2026-10-14',()=>'',request);
+assert.equal(requests,2);assert.equal(metrics[0].orders,3);assert.equal(metrics[0].revenue,null,'Missing price must not turn into zero or a partial sum');
+let repeats=0;
+await assert.rejects(readDeliveryMetrics('2026-10-14','2026-10-14',()=>'',async url=>url.includes('oauth')?Response.json({token:'token'}):Response.json(result([order(1)],true,record({NextDateWTZText:String(++repeats)})))),/повторяет/);
+const events=[{dateTime:'2026-10-14 08:00:00',actionType:1,person:'Неизвестная должность',position:'Стажер',department:'Самурай Белинского 61'}];
+const rows=summarizeAttendance([{work_date:'2026-10-14',rows:events}],[{sale_date:'2026-10-14',restaurant:'Самурай Белинского 61',revenue:10000}],[{dateIso:'2026-10-14',restaurant:'Самурай Белинского 61',orders:2,revenue:300},{dateIso:'2026-10-14',restaurant:'Самурай Белинского 61 (КУХНЯ)',orders:1,revenue:100}]);
+assert.equal(rows[0].deliveryRevenue,400);assert.equal(rows[0].revenue,10000);assert.equal(rows[0].deliveryOrders,3);
+assert.equal(rows[0].unclassified.length,1);assert.equal(rows[0].unclassified[0].shift,0);assert.equal(rows[0].total,0);
+const admin=restrictRows(rows,[],true)[0];assert.equal(admin.unclassified.length,1);
+const staff=restrictRows(rows,[{restaurant:rows[0].restaurant,roles:['delivery']}],false)[0];
+assert.equal(staff.deliveryRevenue,400);assert(!Object.hasOwn(staff,'unclassified'));assert(!Object.hasOwn(staff,'revenue'));
+console.log('PASS: courier-only orders, missing prices, deduplication, cursor loop rejection, mixed-venue delivery revenue, warehouse merging, uncategorized single marks and access isolation');

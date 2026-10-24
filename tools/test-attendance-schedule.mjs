@@ -61,3 +61,15 @@ assert.deepEqual(calls,[1,2]);assert.equal(resumed.rows.length,60);assert.equal(
 calls=[];context.fetch=async()=>{calls.push(1);return new Response('',{status:429,headers:{'Retry-After':'60'}});};
 await assert.rejects(context.fetchAttendance('2026-10-19','2026-10-19','token'),/429/);assert.equal(calls.length,1);
 console.log('PASS: interrupted pagination resumes without losing or duplicating rows; HTTP 429 does not trigger immediate retries');
+let shortCalls=0;
+context.fetch=async()=>{
+  shortCalls++;
+  return Response.json({result:{s:['Source','DateTime','ActionType','LastName','FirstName','Person'].map(n=>({n})),d:shortCalls===1?[[3,'2026-10-19 10:00:00',1,'Test','Short page',77]]:[],n:shortCalls===1}});
+};
+const shortPage=await context.fetchAttendance('2026-10-19','2026-10-19','token');
+assert.equal(shortCalls,2);assert.equal(shortPage.rows.length,1);
+context.fetch=async()=>Response.json({result:{s:[],d:[],n:true}});
+await assert.rejects(context.fetchAttendance('2026-10-19','2026-10-19','token'),/пустую страницу/);
+context.fetch=async()=>Response.json({result:{s:[{n:'Source'}],d:Array.from({length:30},()=>[3]),n:true}});
+await assert.rejects(context.fetchAttendance('2026-10-19','2026-10-19','token'),/повторяет страницу/);
+console.log('PASS: short intermediate pages continue; empty intermediate pages and repeated pages fail without accepting an incomplete snapshot');

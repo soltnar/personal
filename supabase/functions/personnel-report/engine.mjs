@@ -38,7 +38,7 @@ function canonicalRestaurantName(value) {
   if ((key.includes("верхнепечер") || key.includes("верхне печер") || key.includes("вп")) && key.includes("14")) {
     return "Верхне-Печерская, 14Б Самурай";
   }
-  if (key.includes("циолковского") && key.includes("19")) {
+  if (key.includes("каспарус") || (key.includes("циолковского") && key.includes("19"))) {
     return "Циолковского, 19А Самурай";
   }
   if (key.includes("геологов") || key.includes("кварц") || (key.includes("гагарина") && key.includes("224"))) {
@@ -253,18 +253,17 @@ function workedSecondsToShift(workedSeconds) {
 
 export const roleKeys = ["kitchen","hall","delivery","bar"];
 const groups = {"Кухня":"kitchen","Зал":"hall","Доставка":"delivery","Бар":"bar"};
-export function summarizeAttendance(days, revenues) {
+export function summarizeAttendance(days, revenues, deliveryOrders = []) {
   const result = new Map();
   const get = (dateIso,restaurant) => {
     const key = dateIso+"|"+restaurant;
-    if (!result.has(key)) result.set(key,{dateIso,restaurant,kitchen:0,hall:0,delivery:0,bar:0,total:0,revenue:null,kitchenRevenue:null,barRevenue:null,unifiedRevenue:null,kitchenRevenueSource:"kitchen",hasConflict:false,details:{kitchen:[],hall:[],delivery:[],bar:[]}});
+    if (!result.has(key)) result.set(key,{dateIso,restaurant,kitchen:0,hall:0,delivery:0,bar:0,total:0,revenue:null,kitchenRevenue:null,barRevenue:null,unifiedRevenue:null,kitchenRevenueSource:"kitchen",hasConflict:false,unclassified:[],deliveryRevenue:null,deliveryOrders:null,details:{kitchen:[],hall:[],delivery:[],bar:[]}});
     return result.get(key);
   };
   for (const day of days) {
     const people = new Map();
     for (const event of day.rows || []) {
       const group = groups[classifyRole(event.position)];
-      if (!group) continue;
       const key = String(event.personId || normalizeFio(event.person));
       if (!key) continue;
       if (!people.has(key)) people.set(key,[]);
@@ -281,8 +280,13 @@ export function summarizeAttendance(days, revenues) {
       const event = exit || events.at(-1);
       const worked = calcWorkedSeconds(events.map(e=>({direction:Number(e.actionType)===1?"Вход":"Выход",absSec:Date.parse(e.dateTime.replace(" ","T")+"+03:00")/1000})));
       const shift = workedSecondsToShift(worked);
-      if (!shift) continue;
       const row = get(day.work_date,restaurant);
+      if (!event.group) {
+        row.unclassified.push({person:event.person,position:event.position||"Должность не указана",shift,hasConflict:true,reviewReason:"должность не отнесена ни к одной категории",marks:events.map(e=>({dateTime:e.dateTime,actionType:e.actionType}))});
+        row.hasConflict=true;
+        continue;
+      }
+      if (!shift) continue;
       row[event.group]+=shift; row.total+=shift;
       const reviewReason = !exit ? "нет отметки выхода" : restaurant==="Подразделение не определено" ? "точка не определена" : "";
       row.hasConflict ||= !!reviewReason;
@@ -301,6 +305,12 @@ export function summarizeAttendance(days, revenues) {
     if (kind==="bar") row.barRevenue=(row.barRevenue??0)+value;
     if (kind==="single") row.unifiedRevenue=(row.unifiedRevenue??0)+value;
   }
+  for (const metric of deliveryOrders) {
+    const row=get(metric.dateIso,splitRevenueWarehouseName(metric.restaurant).restaurant);
+    const first=row.deliveryOrders===null;
+    row.deliveryOrders=(row.deliveryOrders??0)+metric.orders;
+    row.deliveryRevenue=first?metric.revenue:row.deliveryRevenue===null||metric.revenue===null?null:row.deliveryRevenue+metric.revenue;
+  }
   const unifiedKitchen=new Set(["Кварц, Гагарина, 224А","Моторный, 2/1 доставка Самурай","Коминтерна 166 CALL CENTRE"]);
   for(const row of result.values()) if(unifiedKitchen.has(row.restaurant)&&row.kitchenRevenue===null&&Number.isFinite(row.unifiedRevenue)){
     row.kitchenRevenue=row.unifiedRevenue;row.kitchenRevenueSource="unified";
@@ -318,7 +328,9 @@ export function restrictRows(rows, grants, admin) {
     }
     if(allowedRoles.includes("kitchen")) {copy.kitchenRevenue=row.kitchenRevenue;copy.kitchenRevenueSource=row.kitchenRevenueSource;}
     if(allowedRoles.includes("bar")) copy.barRevenue=row.barRevenue;
-    if(allowedRoles.includes("hall")||allowedRoles.includes("delivery")) copy.revenue=row.revenue;
+    if(allowedRoles.includes("hall")) copy.revenue=row.revenue;
+    if(allowedRoles.includes("delivery")){copy.deliveryRevenue=row.deliveryRevenue;copy.deliveryOrders=row.deliveryOrders;}
+    if(admin){copy.revenue=row.revenue;copy.unclassified=row.unclassified||[];copy.hasConflict ||= copy.unclassified.length>0;}
     return copy;
   });
 }
