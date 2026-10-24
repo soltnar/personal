@@ -58,7 +58,7 @@ function deliveryOrdersPerShift(row,role='delivery'){
 }
 function renderCompactTable(){
   const role=activeReportRole,query=document.getElementById('siteSearch').value.trim().toLocaleLowerCase('ru');
-  const rows=compactRows.filter(row=>(role==='all'||reportRoleAllowed(row,role))&&(!['hall','bar'].includes(role)||row[role]>0)&&(!['delivery','operators'].includes(role)||deliveryRowVisible(row,role))&&row.restaurant.toLocaleLowerCase('ru').includes(query));
+  const rows=compactRows.filter(row=>(role==='all'||reportRoleAllowed(row,role))&&(!['hall','bar'].includes(role)||row[role]>0||row[roleRevenue[role]]>0)&&(!['delivery','operators'].includes(role)||deliveryRowVisible(row,role))&&row.restaurant.toLocaleLowerCase('ru').includes(query));
   const heads=['Предприятие','Смены',role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':role==='delivery'?'Сумма заказов доставки':role==='operators'?'Сумма заказов сети с самовывозом':role==='hall'?'Выручка без доставки':'Общая выручка',role==='all'?'Проверка':'₽/смену',...(['delivery','operators'].includes(role)?['Зак. / смену']:[]),''];
   document.getElementById('resultTable').classList.toggle('deliveryTable',['delivery','operators'].includes(role));
   document.querySelector('#resultTable thead tr').innerHTML=heads.map((label,index)=>`<th scope="col">${label||'<span class="srOnly">Подробнее</span>'}</th>`).join('');
