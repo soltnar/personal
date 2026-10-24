@@ -86,3 +86,13 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
   #resultTable.deliveryTable .compactSiteRow td.ordersShiftCell{width:22%;font-size:12px}
   .ordersShiftCell small{display:block;font-size:9px;color:var(--muted);margin-top:4px;white-space:normal}
 }
+
+.productivityCell small{display:none}
+@media(max-width:600px){
+ #resultTable.deliveryTable .compactSiteRow td.productivityCell,
+ #resultTable.deliveryTable .compactSiteRow td.ordersShiftCell{padding-left:10px!important;vertical-align:middle}
+ .deliveryTable .productivityCell small{display:block;font-size:9px;line-height:1.4;color:var(--muted);margin-top:4px}
+ .deliveryTable .ordersShiftCell small{line-height:1.4}
+ .roleTotals:has(.deliveryMetric)>div:nth-child(2) strong,
+ .roleTotals:has(.deliveryMetric)>div:nth-child(2) strong small{font-size:clamp(17px,5vw,22px)}
+}
