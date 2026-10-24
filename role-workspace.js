@@ -50,9 +50,10 @@ function renderRoleReport(rows){
   document.getElementById('roleGaps')?.addEventListener('click',()=>navigateWorkspace('quality'));
   renderCompactTable();csvBtn.disabled=!rows.length;xlsxBtn.disabled=!rows.length;syncCompactToolbar();
 }
+function deliveryRowVisible(row){return row.delivery>0||row.deliveryOrders>0||row.deliveryRevenue>0;}
 function renderCompactTable(){
   const role=activeReportRole,query=document.getElementById('siteSearch').value.trim().toLocaleLowerCase('ru');
-  const rows=compactRows.filter(row=>(role==='all'||reportRoleAllowed(row,role))&&row.restaurant.toLocaleLowerCase('ru').includes(query));
+  const rows=compactRows.filter(row=>(role==='all'||reportRoleAllowed(row,role))&&(role!=='delivery'||deliveryRowVisible(row))&&row.restaurant.toLocaleLowerCase('ru').includes(query));
   const heads=['Предприятие','Смены',role==='kitchen'?'Выручка кухни':role==='bar'?'Выручка бара':role==='delivery'?'Сумма заказов доставки':'Общая выручка',role==='all'?'Проверка':'₽/смену',''];
   document.querySelector('#resultTable thead tr').innerHTML=heads.map((label,index)=>`<th scope="col">${label||'<span class="srOnly">Подробнее</span>'}</th>`).join('');
   tableBody.replaceChildren();
@@ -104,7 +105,7 @@ function renderRoleDetail(){
     section.innerHTML=`<h3>${prettyDate(entry.dateIso)} <small>${formatShift(entry[role])} смен</small></h3>${days.length>1&&!day?detailMetrics(entry,role):''}`;
     const people=entry.details?.[role]||[];
     if(!people.length){const p=document.createElement('p');p.className='hint';p.textContent='Нет сотрудников в выбранном разделе.';section.append(p);}
-    else{const list=document.createElement('ul');list.className='staffList';for(const person of people){const item=document.createElement('li');item.classList.toggle('needsReview',!!person.hasConflict);item.innerHTML=`<span><strong>${escapeHtml(person.person)}</strong>${person.hasConflict?`<small>${escapeHtml(person.reviewReason||'Требует проверки')}</small>`:''}</span><span>${formatShift(person.shift)} смен.</span>`;list.append(item);}section.append(list);}
+    else{const list=document.createElement('ul');list.className='staffList';for(const person of people){const item=document.createElement('li');item.classList.toggle('needsReview',!!person.hasConflict);item.innerHTML=`<span><strong>${escapeHtml(person.person)}</strong><small class="staffPosition">${escapeHtml(person.position||'Должность не указана')}</small>${person.hasConflict?`<small>${escapeHtml(person.reviewReason||'Требует проверки')}</small>`:''}</span><span>${formatShift(person.shift)} смен.</span>`;list.append(item);}section.append(list);}
     body.append(section);
   }
   refreshIcons();

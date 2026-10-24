@@ -19,3 +19,8 @@ let requests=0;access.reportRequest=async()=>{requests++;return {grants:[]};};aw
 let finish;access.reportRequest=()=>new Promise(resolve=>{finish=resolve;});const pending=vm.runInContext('showAccess()',access);vm.runInContext('resetAccessView()',access);access.revenueDbSession={user:{id:'staff'}};access.workspaceIsOwner=()=>false;finish({grants:[{email:'must-not-render',roles:[]}]});await pending;assert.equal(node('accessList').children.length,0,'Late owner response must not render after identity change');
 assert.match(source,/reportRoleAllowed\(row,key\)/);assert.match(source,/person.reviewReason/);assert.match(source,/dialog.showModal/);
 console.log('PASS: weighted productivity, factory exclusion, missing days, role isolation, access autoload deduplication and stale-session guard');
+vm.runInContext(source.slice(source.indexOf('function deliveryRowVisible('),source.indexOf('function renderCompactTable(')),context);
+assert.equal(context.deliveryRowVisible({delivery:0,deliveryOrders:0,deliveryRevenue:0}),false);
+assert.equal(context.deliveryRowVisible({delivery:3,deliveryOrders:null,deliveryRevenue:null}),true);
+assert.equal(context.deliveryRowVisible({delivery:0,deliveryOrders:2,deliveryRevenue:100}),true);
+console.log('PASS: empty delivery venues hidden; staff with missing data and orders without shifts remain visible');

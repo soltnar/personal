@@ -290,7 +290,7 @@ export function summarizeAttendance(days, revenues, deliveryOrders = []) {
       row[event.group]+=shift; row.total+=shift;
       const reviewReason = !exit ? "нет отметки выхода" : restaurant==="Подразделение не определено" ? "точка не определена" : "";
       row.hasConflict ||= !!reviewReason;
-      row.details[event.group].push({person:event.person,shift,hasConflict:!!reviewReason,reviewReason});
+      row.details[event.group].push({person:event.person,position:event.position||"Должность не указана",shift,hasConflict:!!reviewReason,reviewReason});
     }
   }
   for (const sale of revenues) {
