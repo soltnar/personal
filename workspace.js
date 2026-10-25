@@ -95,27 +95,31 @@ function openWorkspaceDay(restaurant, date) {
 }
 function refreshWorkspaceReport(rows) {
   const daily = rows.flatMap(row=>row.dailyRows||[row]);
-  const checks = [];
+  const checks = [],informational = [];
   let gaps = 0;
   for(const row of daily) for(const [role,label] of Object.entries(roleLabels)) {
     if(!row.allowedRoles?.includes(role) || !getCheckedGroups().includes(label)) continue;
     if((row.coverage?.[role] || productivitySample(row,role)).missing) gaps++;
     for(const person of row.details?.[role] || []) if(person.hasConflict) checks.push({row, person, label});
   }
-  for(const row of daily)for(const person of row.unclassified||[])checks.push({row,person,label:person.excludedFromDelivery?'Вне расчётов доставки':'Без категории'});
+  for(const row of daily)for(const person of row.unclassified||[])(person.excludedFromDelivery?informational:checks).push({row,person,label:person.excludedFromDelivery?'Вне расчётов доставки':'Без категории'});
   const target = document.getElementById('attendanceReviews');
   target.replaceChildren();
   const heading = document.createElement('h3');heading.className = 'panelTitle';heading.textContent = `Отметки сотрудников · ${checks.length}`;target.append(heading);
   const explanation = document.createElement('p');explanation.className = 'hint';explanation.textContent = rows.length ? (checks.length ? 'Причины проверки отмечены рядом с сотрудниками в раскрытии соответствующего дня.' : 'Неоднозначных отметок в текущей выборке нет.') : 'Сначала откройте отчёт за нужный период.';target.append(explanation);
   const list = document.createElement('div');list.className = 'gapList reviewList';
-  for(const {row,person,label} of checks) {
+  const info=document.createElement('details');info.className='excludedAttendance';
+  const infoTitle=document.createElement('summary');infoTitle.textContent='Водитель газели — отметки вне расчётов';
+  const infoList=document.createElement('div');infoList.className='gapList';info.append(infoTitle,infoList);
+  for(const {row,person,label} of [...checks,...informational]) {
     const item = document.createElement('article'), content = document.createElement('div'), title = document.createElement('strong'), description = document.createElement('p'), button = document.createElement('button');
     title.textContent = `${row.restaurant} · ${prettyDate(row.dateIso)} · ${label}`;
     description.textContent = `${person.person || 'Сотрудник'}${person.position ? ' · '+person.position : ''}${person.marks?.length ? ' · Отметки: '+person.marks.map(mark=>mark.dateTime+' '+(Number(mark.actionType)===1?'вход':'выход')+(mark.location?' ('+mark.location+')':'')).join(', ') : ''}${person.reviewReason ? ' · '+person.reviewReason : ''}`;
     button.type='button';button.className='secondaryBtn';button.textContent='Открыть день';button.onclick=()=>openWorkspaceDay(row.restaurant,row.dateIso);
-    content.append(title,description);item.append(content,button);list.append(item);
+    content.append(title,description);item.append(content,button);(person.excludedFromDelivery?infoList:list).append(item);
   }
   target.append(list);
+  if(informational.length)target.append(info);
   const badge=document.getElementById('qualityBadge');badge.textContent=String(gaps+checks.length);badge.hidden=!(gaps+checks.length);
   document.getElementById('overviewEmpty').hidden=rows.length>0;
   document.getElementById('filterSelectionLabel').textContent=rows.length ? `${new Set(daily.map(r=>r.restaurant)).size} предприятий · ${getCheckedGroups().join(', ')}` : 'Настроить выборку';

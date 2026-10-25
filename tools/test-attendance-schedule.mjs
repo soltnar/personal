@@ -10,10 +10,13 @@ assert.equal(nextAutomaticDate(days,today,now),null,'Completed days never refres
 days[0]={...days[0],status:'error'};
 assert.equal(nextAutomaticDate(days,today,now),'2026-10-11','Old error retried beyond five days');
 days[0].updated_at='2026-10-21T22:00:00Z';
-assert.equal(nextAutomaticDate(days,today,now),null,'Failed today in Moscow waits until tomorrow');
+assert.equal(nextAutomaticDate(days,today,now),'2026-10-11','Failed day retries after cooldown, within the same day');
+days[0].updated_at=new Date(now-60000).toISOString();
+assert.equal(nextAutomaticDate(days,today,now),null,'Recent failure waits ten minutes');
+days[0].updated_at='2026-10-21T22:00:00Z';
 assert.equal(nextAutomaticDate(days,'2026-10-23',now+86400000),'2026-10-22','New yesterday has priority');
 assert.equal(nextAutomaticDate([...days,ready('2026-10-22')],'2026-10-23',now+86400000),'2026-10-11','Old errors retry next day after the daily report');
-assert.equal(nextAutomaticDate(days.filter(e=>e.work_date!=='2026-10-18'),today,now),'2026-10-18');
+assert.equal(nextAutomaticDate(days.filter(e=>e.work_date!=='2026-10-18').map(e=>e.work_date==='2026-10-11'?ready(e.work_date):e),today,now),'2026-10-18');
 assert.equal(nextAutomaticDate([],today,now),'2026-10-21');
 assert.equal(nextAutomaticDate([{work_date:'2026-06-15',status:'error',updated_at:'2026-10-20T00:00:00Z'}],today,now),'2026-10-21','New yesterday takes priority over historical backfill');
 assert.equal(nextAutomaticDate([...days,{work_date:'2026-10-10',status:'loading',updated_at:new Date(now-1000).toISOString()}],today,now),null);
@@ -73,3 +76,17 @@ await assert.rejects(context.fetchAttendance('2026-10-19','2026-10-19','token'),
 context.fetch=async()=>Response.json({result:{s:[{n:'Source'}],d:Array.from({length:30},()=>[3]),n:true}});
 await assert.rejects(context.fetchAttendance('2026-10-19','2026-10-19','token'),/повторяет страницу/);
 console.log('PASS: short intermediate pages continue; empty intermediate pages and repeated pages fail without accepting an incomplete snapshot');
+
+let batchCheckpoint,batchCalls=[];
+context.fetch=async(_url,init)=>{
+ const page=JSON.parse(init.body).params['Навигация'].d[2];batchCalls.push(page);
+ return Response.json({result:{s:[{n:'Source'},{n:'Person'},{n:'DateTime'},{n:'ActionType'},{n:'LastName'}],d:page<9?Array.from({length:30},(_,i)=>[3,page*30+i,'2026-10-19 10:00:00',1,'Person '+page+' '+i]):[],n:page<9}});
+};
+await assert.rejects(context.fetchAttendance('2026-10-19','2026-10-19','token',null,async value=>{batchCheckpoint=structuredClone(value);}),error=>error.name==='AttendanceBatchPaused');
+assert.equal(batchCheckpoint.next_page,8);assert.equal(batchCheckpoint.rows.length,240);
+batchCalls=[];
+const completed=await context.fetchAttendance('2026-10-19','2026-10-19','token',batchCheckpoint);
+assert.deepEqual(batchCalls,[8,9]);assert.equal(completed.rows.length,270);
+const pausedEntries=[{work_date:'2026-10-21',status:'loading',updated_at:new Date(now).toISOString(),sync_progress:{paused:true}}];
+assert.equal(nextAutomaticDate(pausedEntries,today,now),'2026-10-21');
+console.log('PASS: bounded eight-page batch resumes immediately from page eight; transient errors retry the same day after cooldown');

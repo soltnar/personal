@@ -127,3 +127,5 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
  .app .reportControls>.revenueDbActions{grid-column:3;grid-row:1;width:auto}
  .app .reportControls>#reportMore{grid-column:4;grid-row:1}
 }
+
+.excludedAttendance{margin-top:24px;border-top:1px solid var(--border);padding-top:16px}.excludedAttendance>summary{cursor:pointer;font-weight:600;color:var(--muted);font-size:13px}.excludedAttendance .gapList{margin-top:12px}

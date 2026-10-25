@@ -29,3 +29,10 @@ context.saby=null;context.revenueDbSession=null;vm.runInContext('syncWorkspacePr
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8'),ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
 assert.equal(new Set(ids).size,ids.length,'No duplicate IDs after separating screens');
 console.log('PASS: sidebar routing, guest/Google/Saby profile, owner-only management, scoped labels, session clearing, unique IDs');
+context.reviewRows=[{restaurant:'Ленина, 36 Самурай',dateIso:'2026-10-24',allowedRoles:['kitchen'],details:{kitchen:[]},unclassified:[{person:'Кислицын Сергей Александрович',excludedFromDelivery:true,position:'логист',marks:[{dateTime:'2026-10-24 08:00:00',actionType:1,location:'Ленина, 36 Самурай'}],reviewReason:'Водитель газели'}]}];
+vm.runInContext('refreshWorkspaceReport(reviewRows)',context);
+assert.equal(node('qualityBadge').hidden,true,'Informational driver marks never increase the quality badge');
+const review=node('attendanceReviews');assert.equal(review.children[0].textContent,'Отметки сотрудников · 0');
+assert.equal(review.children.at(-1).className,'excludedAttendance');
+assert.equal(review.children.at(-1).children[1].children.length,1,'Driver remains visible in a separate informational disclosure');
+console.log('PASS: excluded driver shown separately without problem counter');

@@ -64,6 +64,7 @@ function datesInRange(from: string, to: string) {
 async function cacheRequest(path: string, init: RequestInit = {}) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${CACHE_TABLE}${path}`, {
     ...init,
+    signal: AbortSignal.timeout(20000),
     headers: {
       apikey: SERVICE_KEY,
       Authorization: `Bearer ${SERVICE_KEY}`,
@@ -85,7 +86,7 @@ async function readCache(from: string, to: string) {
     rows: Record<string, unknown>[] | null;
     error: string | null;
     updated_at: string;
-    sync_progress?: {signature:string;next_page:number;rows:Record<string,unknown>[];complete:boolean;attempt_day:string;stable:boolean;failed_at?:string};
+    sync_progress?: {signature:string;next_page:number;rows:Record<string,unknown>[];complete:boolean;attempt_day:string;stable:boolean;failed_at?:string;paused?:boolean;failures?:number;retry_after?:string};
   }>;
 }
 
@@ -121,6 +122,7 @@ async function authorizeCron(req: Request) {
 
 async function sabyToken() {
   const response = await fetch("https://online.sbis.ru/oauth/service/", {
+    signal: AbortSignal.timeout(15000),
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -315,6 +317,7 @@ async function fetchAttendance(from: string, to: string, token: string, progress
     const complete=result.hasMore===false || (result.hasMore===null&&result.rows.length<PAGE_SIZE);
     await saveProgress({next_page:page+1,rows,complete});
     if (complete) break;
+    if(pagesLoaded>=8||Date.now()-startedAt>=45000){const error=new Error('Продолжение сохранённой загрузки');error.name='AttendanceBatchPaused';throw error;}
     if (page === MAX_PAGES - 1) throw new Error("Превышен лимит страниц проходной");
   }
 
@@ -357,6 +360,7 @@ async function syncCacheDates(workDates: string[], previous: Awaited<ReturnType<
   const startedAt = Date.now();
   const firstDate = workDates[0];
   const lastDate = workDates[workDates.length - 1];
+  let lastProgress:Record<string,any>|null=null;
   try {
     const token = await sabyToken();
     // A single operational day is checkpointed independently. Incomplete raw
@@ -366,7 +370,10 @@ async function syncCacheDates(workDates: string[], previous: Awaited<ReturnType<
     const old=previous.find(entry=>entry.work_date===firstDate);
     const saved=old?.sync_progress;
     const progress=old?.status!=='ready' && saved?.signature===signature && (saved.stable||saved.attempt_day===today) ? saved : null;
-    const attendance = await fetchAttendance(firstDate,lastDate,token,progress,values=>cacheRequest(`?work_date=eq.${firstDate}`,{method:'PATCH',body:JSON.stringify({sync_progress:{...values,signature,attempt_day:today,stable:nextDate(lastDate)<today},updated_at:new Date().toISOString()})}));
+    const attendance = await fetchAttendance(firstDate,lastDate,token,progress,values=>{
+      lastProgress={...values,signature,attempt_day:today,stable:nextDate(lastDate)<today,failures:progress?.failures||0,paused:false};
+      return cacheRequest(`?work_date=eq.${firstDate}`,{method:'PATCH',body:JSON.stringify({sync_progress:lastProgress,updated_at:new Date().toISOString()})});
+    });
     for (const workDate of workDates) {
       const workDayRows = attendance.rows
         .filter((row) => operationalDate(row.dateTime) === workDate)
@@ -381,12 +388,18 @@ async function syncCacheDates(workDates: string[], previous: Awaited<ReturnType<
     }
     console.log(JSON.stringify({ event: "attendance_cache_batch_ready", from: firstDate, to: lastDate, days: workDates.length, rows: attendance.rows.length, elapsedMs: Date.now() - startedAt }));
   } catch (error) {
+    if(error instanceof Error&&error.name==='AttendanceBatchPaused'&&lastProgress){
+      await cacheRequest(`?work_date=eq.${firstDate}`,{method:'PATCH',body:JSON.stringify({status:'loading',error:null,sync_progress:{...lastProgress,paused:true},updated_at:new Date().toISOString()})});
+      return;
+    }
     const message = error instanceof Error ? error.message : "Ошибка Saby";
     await Promise.all(workDates.map((workDate) => {
       const old=previous.find(entry=>entry.work_date===workDate);
       const values=failureValues(old,message,Date.now()-startedAt);
       if(old?.status==='ready')return cacheRequest(`?work_date=eq.${workDate}`,{method:'PATCH',body:JSON.stringify({...values,updated_at:old.updated_at,sync_progress:{failed_at:new Date().toISOString()}})});
-      return writeCache(workDate,values);
+      const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      const progress=lastProgress||old?.sync_progress||{signature:JSON.stringify([firstDate,lastDate,PAGE_SIZE,CACHE_FORMAT_VERSION]),next_page:0,rows:[],complete:false,attempt_day:today,stable:nextDate(lastDate)<today};
+      return writeCache(workDate,{...values,...(progress?{sync_progress:{...progress,paused:false,failures:Number(progress.failures||0)+1,retry_after:new Date(Date.now()+30000).toISOString()}}:{})});
     }));
     console.error(JSON.stringify({ event: "attendance_cache_batch_error", from: firstDate, to: lastDate, error: message, elapsedMs: Date.now() - startedAt }));
   }
@@ -409,7 +422,7 @@ Deno.serve(async (req) => {
     if(refreshMode==='recent') {
       const entries=[];
       for(let offset=0;;offset+=1000){
-        const page=await cacheRequest(`?select=work_date,status,updated_at&work_date=lt.${todayMoscow}&order=work_date.asc&limit=1000&offset=${offset}`);
+        const page=await cacheRequest(`?select=work_date,status,updated_at,sync_progress&work_date=lt.${todayMoscow}&order=work_date.asc&limit=1000&offset=${offset}`);
         entries.push(...page);if(page.length<1000)break;
       }
       automaticDate=nextAutomaticDate(entries,todayMoscow);
@@ -423,7 +436,7 @@ Deno.serve(async (req) => {
     const byDate = new Map(cached.map((entry) => [entry.work_date, entry]));
     const now = Date.now();
     const activeLoading = cached.some((entry) => entry.status === "loading"
-      && now - new Date(entry.updated_at).getTime() < CACHE_STALE_MS);
+      && !entry.sync_progress?.paused && now - new Date(entry.updated_at).getTime() < CACHE_STALE_MS);
     const forceBefore = refreshMode === "force" ? url.searchParams.get("before") || "" : "";
     if (refreshMode === "force" && !Number.isFinite(Date.parse(forceBefore))) throw new Error("Не задан момент обновления");
     const refreshCutoff = forceBefore || `${todayMoscow}T00:00:00Z`;
@@ -437,10 +450,10 @@ Deno.serve(async (req) => {
       const entry = byDate.get(date);
       if (!entry) return true;
       if (refreshMode === 'force' && entry.error && (entry.sync_progress?.failed_at || '') >= refreshCutoff) return false;
-      if (entry.status === "error") return refreshMode !== 'force' || entry.updated_at < refreshCutoff;
+      if (entry.status === "error") return refreshMode !== 'force' || entry.updated_at < refreshCutoff || (Number(entry.sync_progress?.failures||0)<=3&&!!entry.sync_progress?.retry_after&&Date.parse(entry.sync_progress.retry_after)<=now);
       if (entry.status === "ready" && !isCurrentCacheEntry(entry)) return true;
       if (refreshMode === "force" && entry.status === "ready" && entry.updated_at < refreshCutoff) return true;
-      return entry.status === "loading" && now - new Date(entry.updated_at).getTime() >= CACHE_STALE_MS;
+      return entry.status === "loading" && (entry.sync_progress?.paused || now - new Date(entry.updated_at).getTime() >= CACHE_STALE_MS);
     });
 
     let syncingDates: string[] = [];
@@ -453,8 +466,12 @@ Deno.serve(async (req) => {
           && !(refreshMode === "force" && entry.updated_at < refreshCutoff)) break;
         syncingDates.push(date);
       }
-      await Promise.all(syncingDates.map((date) => writeCache(date, { status: "loading", error: null, elapsed_ms: null })));
-      EdgeRuntime.waitUntil(syncCacheDates(syncingDates,cached));
+      const previousDay=byDate.get(syncingDates[0]);
+      const claim=previousDay
+        ? await cacheRequest(`?work_date=eq.${syncingDates[0]}&updated_at=eq.${encodeURIComponent(previousDay.updated_at)}`,{method:'PATCH',body:JSON.stringify({status:'loading',error:null,elapsed_ms:null,updated_at:new Date().toISOString()})})
+        : await writeCache(syncingDates[0],{status:'loading',error:null,elapsed_ms:null});
+      if(claim.length)EdgeRuntime.waitUntil(syncCacheDates(syncingDates,cached));
+      else syncingDates=[];
     }
 
     const rows = cached.filter(isCurrentCacheEntry).flatMap((entry) => entry.rows || []);
@@ -462,7 +479,7 @@ Deno.serve(async (req) => {
       .filter((entry) => refreshMode !== "force" || entry.updated_at >= refreshCutoff)
       .map((entry) => entry.work_date);
     const pendingDates = requestedDates.filter((date) => !readyDates.includes(date));
-    const errors = cached.filter((entry) => entry.status === "error" || (refreshMode === 'force' && entry.error && (entry.sync_progress?.failed_at || '') >= refreshCutoff)).map((entry) => ({ date: entry.work_date, error: entry.error }));
+    const errors = cached.filter((entry) => (entry.status === "error" && !(refreshMode==='force'&&Number(entry.sync_progress?.failures||0)<=3&&entry.sync_progress?.retry_after)) || (refreshMode === 'force' && entry.error && (entry.sync_progress?.failed_at || '') >= refreshCutoff)).map((entry) => ({ date: entry.work_date, error: entry.error }));
     return json({
       from,
       to,
