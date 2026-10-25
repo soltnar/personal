@@ -27,3 +27,7 @@ assert.match(excluded.unclassified[0].reviewReason,/Водитель газел�
 assert.equal(restrictRows([excluded],[],true)[0].unclassified.length,1);
 assert(!Object.hasOwn(restrictRows([excluded],[{restaurant:excluded.restaurant,roles:['delivery']}],false)[0],'unclassified'));
 console.log('PASS: excluded driver retains locations and entrance/exit marks in owner review without adding delivery shifts');
+
+const technician=summarizeAttendance([{work_date:date,rows:marks('Самурай Доставка Моторный пер 2к1','Менеджер ремонтно-технического отд. упр. (Категория 3500/9)')}],[])[0];
+assert.equal(technician.hall,0);assert.equal(technician.unclassified.length,1);
+console.log('PASS: maintenance manager remains visible in review and never enters hall staffing');
