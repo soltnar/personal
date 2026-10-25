@@ -42,10 +42,10 @@ def handle_personnel(handler, build_payload):
         network = []
         for report in reports:
             payload = build_payload(Path(report['filename']))
-            # Owner confirmed 24.10.2026: this is a zero-value order, not a missing price.
-            # Preserve unknown amounts for every other order.
+            # Owner rule (25.10.2026): orders without a price are zero-value orders.
+            # They remain in both order counts and staffing productivity.
             for order in payload['orders']:
-                if report['day'] == '2026-09-18' and str(order.get('sale')) == '6739794' and order.get('amount') is None:
+                if order.get('amount') is None:
                     order['amount'] = 0
             all_amounts = [order.get('amount') for order in payload['orders']]
             network.append({'dateIso':report['day'],'orders':len(all_amounts),'revenue':float(sum((Decimal(str(v)) for v in all_amounts),Decimal(0))) if all(v is not None for v in all_amounts) else None})
