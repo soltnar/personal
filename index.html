@@ -8,11 +8,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Персонал" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" type="image/svg+xml" href="icon.svg?v=5.0.18" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg?v=5.0.19" />
   <link rel="icon" type="image/png" sizes="32x32" href="personnel-icon-32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="personnel-icon-180.png" />
-  <link rel="stylesheet" href="styles.css?v=5.0.18" />
-  <link rel="stylesheet" href="role-workspace.css?v=5.0.18" />
+  <link rel="stylesheet" href="styles.css?v=5.0.19" />
+  <link rel="stylesheet" href="role-workspace.css?v=5.0.19" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -71,16 +71,16 @@
     </section>
     <section class="panel settingsIntro" data-pages="settings" hidden><p class="eyebrow">ПРИЛОЖЕНИЕ</p><h2 class="panelTitle">Всегда под рукой</h2><p id="installHint" class="hint">Установите приложение на телефон или компьютер. Для отчётов нужен интернет.</p><button id="installApp" class="secondaryBtn" type="button">Установить приложение</button><p id="installStatus" role="status" hidden>Приложение установлено</p></section>
     <details id="telegramSettings" class="panel fallbackPanel" data-pages="settings" data-admin-only hidden>
-      <summary>Telegram — ежедневная сводка шефам</summary>
+      <summary>Telegram — рассылка по пользователям</summary>
       <div class="fallbackContent">
-        <p class="hint">Каждому получателю — кухня своего предприятия: выручка, смены, выработка, ФИО и причины замечаний. Перед включением проверьте предпросмотр и chat_id.</p>
-        <p class="hint">Можно использовать существующего бота с выручкой. Добавьте его токен как TELEGRAM_BOT_TOKEN в секреты Edge Functions Supabase. Получатель должен открыть бота и нажать «Старт». Токен в приложении вводить не нужно.</p>
+        <p class="hint">Администратор выбирает каждому пользователю предприятия и разделы: кухню, зал, бар, доставку или операторов. Получатель видит показатели и замечания по персоналу только выбранных разделов.</p>
+        <p class="hint">Используется бот выручки @ilgp_bot. Получатель должен открыть бота и нажать «Старт». Сводка приходит отдельным сообщением по каждому выбранному предприятию.</p>
         <form id="telegramForm">
           <input id="telegramRecipientId" type="hidden">
-          <label class="label">Предприятие<select id="telegramVenue" required></select></label>
-          <label class="label">Получатель<input id="telegramName" required maxlength="150" placeholder="Имя шеф-повара"></label>
+          <label class="label">Получатель<input id="telegramName" required maxlength="150" placeholder="Имя сотрудника"></label>
           <label class="label">Telegram chat_id<input id="telegramChat" required inputmode="numeric" pattern="-?[0-9]{5,20}" placeholder="Числовой идентификатор чата"></label>
           <label class="label">Час отправки по Москве<input id="telegramHour" type="number" min="7" max="18" value="10" required></label>
+          <details class="telegramScopePicker" open><summary>Предприятия и разделы</summary><p class="hint">Отметьте нужные разделы у каждого предприятия. Операторы доступны у колл-центра.</p><div id="telegramScopes"></div></details>
           <label><input id="telegramEnabled" type="checkbox"> Включить ежедневную отправку этому получателю</label>
           <button type="submit">Сохранить получателя</button>
           <button id="telegramNew" type="button" class="secondaryBtn">Новый получатель</button>
@@ -205,13 +205,13 @@
   <nav class="mobileNav" aria-label="Мобильная навигация"><a href="#overview" data-mobile-view="overview"><i data-feather="bar-chart-2" aria-hidden="true"></i>Обзор</a><a href="#enterprises" data-mobile-view="enterprises"><i data-feather="map-pin" aria-hidden="true"></i>Точки</a><a href="#quality" data-mobile-view="quality"><i data-feather="check-square" aria-hidden="true"></i>Проверка</a><button id="mobileMore" type="button"><i data-feather="more-horizontal" aria-hidden="true"></i>Ещё</button></nav>
   <dialog id="siteDialog" class="siteDialog" aria-labelledby="siteDialogTitle"><header><div><small id="siteDialogPeriod"></small><h2 id="siteDialogTitle"></h2></div><button id="closeSiteDialog" type="button" class="secondaryBtn" aria-label="Закрыть детали"><i data-feather="x" aria-hidden="true"></i></button></header><div id="siteDialogBody"></div></dialog>
 
-  <script src="script.js?v=5.0.18"></script>
-  <script src="report-ui.js?v=5.0.18"></script>
-  <script src="saby-login.js?v=5.0.18"></script>
-  <script src="workspace.js?v=5.0.18"></script>
-  <script src="access-ui.js?v=5.0.18"></script>
-  <script src="telegram-ui.js?v=5.0.18"></script>
+  <script src="script.js?v=5.0.19"></script>
+  <script src="report-ui.js?v=5.0.19"></script>
+  <script src="saby-login.js?v=5.0.19"></script>
+  <script src="workspace.js?v=5.0.19"></script>
+  <script src="access-ui.js?v=5.0.19"></script>
+  <script src="telegram-ui.js?v=5.0.19"></script>
   <script src="vendor/feather.min.js"></script>
-  <script src="role-workspace.js?v=5.0.18"></script>
+  <script src="role-workspace.js?v=5.0.19"></script>
 </body>
 </html>
