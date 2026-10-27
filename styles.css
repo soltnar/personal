@@ -731,3 +731,11 @@ a { color:var(--accent); }
   .actions button { padding:9px 12px!important;font-size:11px; }
 }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important;transition:none!important; } }
+
+/* Daily chef reports: keep recipient controls readable on phones. */
+#telegramForm{display:grid;gap:14px;margin:16px 0}
+#telegramForm .label{display:grid;gap:6px}
+#telegramForm input:not([type="checkbox"]):not([type="hidden"]),#telegramForm select{width:100%;box-sizing:border-box;min-height:42px;padding:9px 12px;border:1px solid var(--line,#dfe6e5);border-radius:9px;background:#fff;color:inherit;font:inherit}
+#telegramForm>label:not(.label){display:flex;align-items:flex-start;gap:9px}
+#telegramRecipients p{display:flex;flex-wrap:wrap;gap:8px;align-items:center;overflow-wrap:anywhere}
+#telegramLog p{overflow-wrap:anywhere}

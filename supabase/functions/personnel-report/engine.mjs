@@ -15,7 +15,7 @@ function hasRibsMarker(value) {
   return text.includes("ribs") || text.includes("рибс") || /[rр][iи][bб][sс]/i.test(text);
 }
 
-function canonicalRestaurantName(value) {
+export function canonicalRestaurantName(value) {
   const original = String(value || "").trim();
   const key = revenueNameKey(original);
   if (!key) return "";
@@ -294,9 +294,10 @@ export function summarizeAttendance(days, revenues, deliveryOrders = [], network
         row.hasConflict=true;
         continue;
       }
-      if (!shift) continue;
+      const hasEntry=events.some(e=>Number(e.actionType)===1);
+      const reviewReason = [!hasEntry?"нет отметки входа":"",!exit?"нет отметки выхода":"",restaurant==="Подразделение не определено"?"точка не определена":""].filter(Boolean).join("; ");
+      if (!shift && !reviewReason) continue;
       row[event.group]+=shift; row.total+=shift;
-      const reviewReason = !exit ? "нет отметки выхода" : restaurant==="Подразделение не определено" ? "точка не определена" : "";
       row.hasConflict ||= !!reviewReason;
       row.details[event.group].push({person:event.person,position:event.position||"Должность не указана",shift,hasConflict:!!reviewReason,reviewReason});
     }
