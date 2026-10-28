@@ -35,33 +35,45 @@ function dailyReader(date:string) {
     return cache.get(key)!;
   };
 }
-async function telegram(chat:string,text:string) {
+async function telegram(chat:string,text:string,messageId?:string) {
   const token=await botToken();
   if(!token)throw new Error('Добавьте TELEGRAM_BOT_TOKEN в секреты Supabase');
   // Never log the URL or the underlying fetch exception: they contain the token.
   let response;
-  try {response=await fetch(`https://api.telegram.org/bot${token}/sendMessage`,{method:'POST',signal:AbortSignal.timeout(12000),headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chat,text,protect_content:true,link_preview_options:{is_disabled:true}})});}
+  try {response=await fetch(`https://api.telegram.org/bot${token}/${messageId?'editMessageText':'sendMessage'}`,{method:'POST',signal:AbortSignal.timeout(12000),headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chat,text,...(messageId?{message_id:messageId}:{protect_content:true}),link_preview_options:{is_disabled:true}})});}
   catch {throw new Error('Статус доставки неизвестен; проверьте Telegram перед повтором');}
   const body=await response.json();
+  if(messageId&&body.error_code===400&&String(body.description||'').includes('message is not modified'))return messageId;
   if(!response.ok||!body.ok)throw new Error(`Telegram отклонил отправку (код ${body.error_code||response.status})`);
   return String(body.result.message_id);
 }
-async function dispatch(date:string,recipientId?:string,scheduled=false) {
+async function dispatch(date:string,recipientId?:string,scheduled=false,refresh=false,onlyRestaurants?:string[]) {
   if(!await botToken())return {sent:0,reason:'Бот ещё не подключён'};
   const {hour}=moscowDay();
   const recipients=await db(`personnel_telegram_recipients?select=*&enabled=eq.true${recipientId?'&id=eq.'+encodeURIComponent(recipientId):''}${!recipientId||scheduled?'&send_hour=lte.'+hour:''}&order=id.asc`);
   if(!recipients.length)return {sent:0,reason:'Нет активных получателей'};
   const result=[],readDaily=dailyReader(date);
   for(const recipient of recipients) {
-    const assignments=subscriptionAssignments(recipient.assignments||[{restaurant:recipient.restaurant,roles:['kitchen']}]);
-    for(const assignment of assignments) {
+    const known=await db(`personnel_telegram_log?select=id,status,message_id,chat_id,restaurant&work_date=eq.${date}&recipient_id=eq.${recipient.id}`);
+    const assignments=subscriptionAssignments(recipient.assignments||[{restaurant:recipient.restaurant,roles:['kitchen']}]).filter(item=>!onlyRestaurants||onlyRestaurants.includes(item.restaurant)).sort((a,b)=>Number(known.some(log=>log.restaurant===a.restaurant))-Number(known.some(log=>log.restaurant===b.restaurant)));
+    for(const [index,assignment] of assignments.entries()) {
       const restaurant=assignment.restaurant;
-      const existing=await db(`personnel_telegram_log?select=id&work_date=eq.${date}&recipient_id=eq.${recipient.id}&restaurant=eq.${encodeURIComponent(restaurant)}&limit=1`);
-      if(existing.length)continue;
-      if(result.filter(item=>!item.error).length>=3)return {result,hasMore:true};
+      const existing=known.filter(log=>log.restaurant===restaurant);
+      if(existing.length&&!refresh)continue;
+      if(result.filter(item=>!item.error).length>=3)return {result,hasMore:true,...(refresh?{remaining:assignments.slice(index).map(item=>item.restaurant)}:{})};
       let text;
       try{text=reportMessage(await readDaily([assignment]),restaurant,date,assignment.roles);}
       catch(error){result.push({id:recipient.id,restaurant,error:(error as Error).message});continue;}
+      if(existing.length) {
+        const log=existing[0];
+        if(log.status!=='sent'||!log.message_id||log.chat_id!==recipient.chat_id){result.push({id:recipient.id,restaurant,status:'review',error:'Предыдущая доставка требует проверки. Автоматический повтор заблокирован.'});continue;}
+        try {
+          await telegram(recipient.chat_id,text,log.message_id);
+          await db(`personnel_telegram_log?id=eq.${log.id}`,{method:'PATCH',body:JSON.stringify({roles:assignment.roles,error:null,updated_at:new Date().toISOString()})});
+          result.push({id:recipient.id,restaurant,status:'updated'});
+        }catch(error){result.push({id:recipient.id,restaurant,error:(error as Error).message});}
+        continue;
+      }
       // Each enterprise/day is claimed independently, so interrupted multi-venue
       // deliveries resume without repeating messages that already went out.
       const claim=await fetch(`${BASE}/rest/v1/personnel_telegram_log`,{method:'POST',headers:{apikey:KEY,Authorization:`Bearer ${KEY}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify({recipient_id:recipient.id,restaurant,roles:assignment.roles,chat_id:recipient.chat_id,work_date:date,status:'sending'})});
@@ -129,7 +141,8 @@ Deno.serve(async(req)=>{
         return json({messages,text:messages.map(item=>item.text||item.restaurant+' — '+item.error).join('\n\n────────\n\n')});
       }
       if(!/^[0-9a-f-]{36}$/.test(String(body.id||'')))return json({error:'Выберите получателя'},400);
-      return json(await dispatch(date,body.id));
+      if(body.remaining!==undefined&&(!Array.isArray(body.remaining)||body.remaining.length>18||body.remaining.some((name:unknown)=>typeof name!=='string'||name.length>200)))return json({error:'Некорректный список предприятий'},400);
+      return json(await dispatch(date,body.id,false,true,body.remaining));
     }
     return json({error:'Неизвестное действие'},400);
   }catch(error){return json({error:error instanceof Error?error.message:'Ошибка рассылки'},500);}

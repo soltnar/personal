@@ -30,14 +30,14 @@ assert.throws(()=>subscriptionAssignments([{restaurant:venue,roles:[]}]));
 assert.throws(()=>subscriptionAssignments([{restaurant:venue,roles:['bar']},{restaurant:venue,roles:['hall']}]));
 assert.equal(moscowDay(new Date('2026-10-26T21:01:00Z')).yesterday,date);
 assert.equal(moscowDay(new Date('2026-10-27T07:00:00Z')).hour,10);
-let recipientQuery='';
-let handler,token='',isOwner=true,ready=true,records=[],recipients=[],sent=[],lastSave,historyReady=true;
+let recipientQuery='',editMode='ok';
+let handler,token='',isOwner=true,ready=true,records=[],recipients=[],sent=[],edited=[],lastSave,historyReady=true;
 globalThis.Deno={env:{get:key=>key==='TELEGRAM_BOT_TOKEN'?token:key==='SUPABASE_URL'?'https://test.invalid':'key'},serve:fn=>handler=fn};
 globalThis.fetch=async(url,init={})=>{
  const parsed=new URL(url),path=parsed.pathname;
  if(parsed.hostname==='viruchki.ilgp.ru')return Response.json(parsed.searchParams.get('action')==='catalog'?{restaurants:[],warehouses:[]}:{users:[{id:123456,firstName:'Сотрудник',status:'approved',salesAccess:{mode:'all'}}]});
  if(parsed.hostname==='history.ilgp.ru')return historyReady?Response.json({metrics,network,completeDates:[date]}):Response.json({error:'missing'},{status:503});
- if(parsed.hostname==='api.telegram.org'){sent.push(JSON.parse(init.body));return Response.json({ok:true,result:{message_id:77}});}
+ if(parsed.hostname==='api.telegram.org'){const editing=path.endsWith('editMessageText');(editing?edited:sent).push(JSON.parse(init.body));if(editing&&editMode!=='ok')return Response.json({ok:false,error_code:400,description:editMode==='unchanged'?'Bad Request: message is not modified':'Bad Request: message to edit not found'},{status:400});return Response.json({ok:true,result:{message_id:77}});}
  if(path==='/auth/v1/user')return Response.json({email:isOwner?'soltnar@gmail.com':'other@example.org',email_confirmed_at:date});
  if(path.endsWith('personnel_telegram_config'))return Response.json([]);
  if(path.endsWith('attendance_daily_cache'))return Response.json(ready?days:[{...days[0],status:'loading'}]);
@@ -70,8 +70,12 @@ ready=false;preview=await (await call('preview',{date,assignments})).json();asse
 token='test';const id='11111111-1111-1111-1111-111111111111';recipients=[{id,assignments,chat_id:'123456',enabled:true}];
 await call('send',{date,id});await call('send',{date,id});
 assert.equal(sent.length,2,'One message per enterprise, repeated calls do not send duplicates');
+assert.equal(edited.length,2,'Manual resend edits existing messages');assert(edited.every(item=>item.message_id==='77'));assert(edited.every(item=>!item.text.includes('https://soltnar.github.io/personal/')));
 assert(sent[0].text.includes('Бармен секрет'));assert(!sent[0].text.includes('Без выхода'));assert(sent[1].text.includes('Оператор сети'));
 assert(records.every(row=>row.status==='sent'));assert.deepEqual(records[0].roles,['hall','bar']);
+editMode='unchanged';let refreshResult=await (await call('send',{date,id})).json();assert(refreshResult.result.every(item=>item.status==='updated'));assert.equal(sent.length,2);
+editMode='missing';refreshResult=await (await call('send',{date,id})).json();assert(refreshResult.result.every(item=>item.error));assert.equal(sent.length,2,'A failed edit never falls back to sending a duplicate');
+editMode='ok';records.forEach(row=>row.status='review');const editsBeforeReview=edited.length;await call('send',{date,id});assert.equal(edited.length,editsBeforeReview,'Ambiguous deliveries cannot be resent or edited');
 // Missing history must not leak or substitute the entire enterprise revenue.
 records=[];sent=[];historyReady=false;
 await call('send',{date,id});assert.equal(sent.length,0);assert.equal(records.length,0);
@@ -81,6 +85,8 @@ recipients[0].assignments=[...assignments,{restaurant:other,roles:['kitchen']},{
 const firstBatch=await (await call('send',{date,id})).json();assert.equal(firstBatch.hasMore,true);assert.equal(sent.length,3);
 await call('send',{date,id});assert.equal(sent.length,4,'Interrupted batches resume remaining venues only');
 await call('send',{date,id});assert.equal(sent.length,4);
+const beforeContinuation=edited.length;const refreshBatch=await (await call('send',{date,id})).json();assert.equal(refreshBatch.remaining.length,1);await call('send',{date,id,remaining:refreshBatch.remaining});assert.equal(edited.length-beforeContinuation,4,'Continuation updates every enterprise exactly once');assert.equal(sent.length,4);
+const editsBeforeCron=edited.length;
 const cronResponse=await handler(new Request('https://test.invalid/?action=cron&recipient_id='+id,{headers:{'x-cron-key':'test-cron'}}));
-assert.equal(cronResponse.status,200);const cronQuery=new URLSearchParams(recipientQuery);assert.equal(cronQuery.get('id'),'eq.'+id);assert.equal(cronQuery.get('send_hour'),'lte.'+moscowDay().hour,'A recipient-scoped automatic job still respects the scheduled hour');
+assert.equal(cronResponse.status,200);assert.equal(edited.length,editsBeforeCron,'Cron never refreshes already sent messages');const cronQuery=new URLSearchParams(recipientQuery);assert.equal(cronQuery.get('id'),'eq.'+id);assert.equal(cronQuery.get('send_hour'),'lte.'+moscowDay().hour,'A recipient-scoped automatic job still respects the scheduled hour');
 console.log('PASS: user scopes, kitchen/hall/bar/operators formulas and names, multi-venue messages, history completeness, owner-only settings, validation, Moscow time and duplicate protection');
