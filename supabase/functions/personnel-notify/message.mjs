@@ -22,7 +22,11 @@ export function reportMessage(rows, restaurant, date, roles=['kitchen']) {
   const lines=[`${row.restaurant} · ${date.split('-').reverse().join('.')}`];
   for(const role of assignment.roles) {
     const revenue=row[revenueFields[role]],label=role==='kitchen'&&row.kitchenRevenueSource==='unified'?'Выручка единого склада':revenueLabels[role];
-    lines.push('',sectionLabels[role],`${label}: ${Number.isFinite(revenue)?number(revenue)+' ₽':'нет данных'}`,`Смены: ${number(row[role])}`,`Выработка: ${Number.isFinite(revenue)&&row[role]>0?number(revenue/row[role])+' ₽/смену':'не рассчитана'}`);
+    lines.push('',sectionLabels[role],`${label}: ${Number.isFinite(revenue)?number(revenue)+' ₽':'нет данных'}`,`Смены: ${number(row[role])}`);
+    const staff=(row.details[role]||[]).filter(person=>person.shift>0).sort((a,b)=>a.person.localeCompare(b.person,'ru'));
+    lines.push(staff.length?'В сменах учтены:':'В сменах учтены: нет учитываемых смен.');
+    for(const person of staff)lines.push(`• ${person.person} — ${number(person.shift)} ${person.shift===1?'смена':'смены'}.`);
+    lines.push(`Выработка: ${Number.isFinite(revenue)&&row[role]>0?number(revenue/row[role])+' ₽/смену':'не рассчитана'}`);
     if(['delivery','operators'].includes(role)) {
       const orders=row[role==='delivery'?'deliveryOrders':'operatorsOrders'];
       lines.push(`Заказы: ${Number.isFinite(orders)?number(orders):'нет данных'}`);

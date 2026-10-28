@@ -12,7 +12,12 @@ assert(message.includes('Без входа — нет отметки входа'
 assert(message.includes('Смены: 1'));
 assert(message.includes('100 000 ₽/смену'));
 for(const name of ['Бармен секрет','Администратор зала','Другая точка','Неизвестная должность'])assert(!message.includes(name));
-assert(!message.includes('Нормальная смена —'));
+assert(message.includes('Нормальная смена — 1 смена.'));
+const roster=message.split('В сменах учтены:')[1].split('Выработка:')[0];
+assert(!roster.includes('Без выхода'));assert(!roster.includes('Без входа'));
+const halfDays=[{work_date:date,status:'ready',rows:[event('Полсмены',1,'10:00:00'),event('Полсмены',0,'14:00:00')]}];
+const half=reportMessage(summarizeAttendance(halfDays,sales),venue,date,['kitchen']);
+assert(half.includes('Смены: 0,5'));assert(half.includes('Полсмены — 0,5 смены.'));
 assert.throws(()=>kitchenMessage(rows,'Другая точка',date));
 assert(kitchenMessage(summarizeAttendance(days,[]),venue,date).includes('Сводка неполная'));
 const bar=reportMessage(rows,venue,date,['bar']);assert(bar.includes('Бармен секрет'));assert(bar.includes('20 000 ₽'));assert(!bar.includes('Без выхода'));assert(!bar.includes('Администратор зала'));
