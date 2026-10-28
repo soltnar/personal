@@ -46,10 +46,10 @@ async function telegram(chat:string,text:string) {
   if(!response.ok||!body.ok)throw new Error(`Telegram отклонил отправку (код ${body.error_code||response.status})`);
   return String(body.result.message_id);
 }
-async function dispatch(date:string,recipientId?:string) {
+async function dispatch(date:string,recipientId?:string,scheduled=false) {
   if(!await botToken())return {sent:0,reason:'Бот ещё не подключён'};
   const {hour}=moscowDay();
-  const recipients=await db(`personnel_telegram_recipients?select=*&enabled=eq.true${recipientId?'&id=eq.'+encodeURIComponent(recipientId):'&send_hour=lte.'+hour}&order=id.asc`);
+  const recipients=await db(`personnel_telegram_recipients?select=*&enabled=eq.true${recipientId?'&id=eq.'+encodeURIComponent(recipientId):''}${!recipientId||scheduled?'&send_hour=lte.'+hour:''}&order=id.asc`);
   if(!recipients.length)return {sent:0,reason:'Нет активных получателей'};
   const result=[],readDaily=dailyReader(date);
   for(const recipient of recipients) {
@@ -90,7 +90,9 @@ Deno.serve(async(req)=>{
       if(!key)return json({error:'Доступ запрещён'},403);
       const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(key)))].map(v=>v.toString(16).padStart(2,'0')).join('');
       if(!(await db(`attendance_sync_config?select=id&id=eq.1&secret_hash=eq.${hash}`)).length)return json({error:'Доступ запрещён'},403);
-      return json(await dispatch(moscowDay().yesterday));
+      const recipientId=url.searchParams.get('recipient_id')||undefined;
+      if(recipientId&&!/^[0-9a-f-]{36}$/.test(recipientId))return json({error:'Некорректный получатель'},400);
+      return json(await dispatch(moscowDay().yesterday,recipientId,true));
     }
     const authorization=req.headers.get('authorization')||'';
     if(!authorization.startsWith('Bearer '))return json({error:'Войдите через Google'},401);

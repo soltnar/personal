@@ -25,6 +25,7 @@ assert.throws(()=>subscriptionAssignments([{restaurant:venue,roles:[]}]));
 assert.throws(()=>subscriptionAssignments([{restaurant:venue,roles:['bar']},{restaurant:venue,roles:['hall']}]));
 assert.equal(moscowDay(new Date('2026-10-26T21:01:00Z')).yesterday,date);
 assert.equal(moscowDay(new Date('2026-10-27T07:00:00Z')).hour,10);
+let recipientQuery='';
 let handler,token='',isOwner=true,ready=true,records=[],recipients=[],sent=[],lastSave,historyReady=true;
 globalThis.Deno={env:{get:key=>key==='TELEGRAM_BOT_TOKEN'?token:key==='SUPABASE_URL'?'https://test.invalid':'key'},serve:fn=>handler=fn};
 globalThis.fetch=async(url,init={})=>{
@@ -36,7 +37,8 @@ globalThis.fetch=async(url,init={})=>{
  if(path.endsWith('personnel_telegram_config'))return Response.json([]);
  if(path.endsWith('attendance_daily_cache'))return Response.json(ready?days:[{...days[0],status:'loading'}]);
  if(path.endsWith('revenue_entries'))return Response.json(sales);
- if(path.endsWith('personnel_telegram_recipients')){if(init.method){lastSave=JSON.parse(init.body);return Response.json([lastSave]);}return Response.json(recipients);}
+ if(path.endsWith('attendance_sync_config'))return Response.json([{id:1}]);
+ if(path.endsWith('personnel_telegram_recipients')){recipientQuery=parsed.search;if(init.method){lastSave=JSON.parse(init.body);return Response.json([lastSave]);}return Response.json(recipients);}
  if(path.endsWith('personnel_telegram_log')){
   if(init.method==='POST'){
    const body=JSON.parse(init.body);if(records.some(row=>row.restaurant===body.restaurant))return Response.json({}, {status:409});
@@ -74,4 +76,6 @@ recipients[0].assignments=[...assignments,{restaurant:other,roles:['kitchen']},{
 const firstBatch=await (await call('send',{date,id})).json();assert.equal(firstBatch.hasMore,true);assert.equal(sent.length,3);
 await call('send',{date,id});assert.equal(sent.length,4,'Interrupted batches resume remaining venues only');
 await call('send',{date,id});assert.equal(sent.length,4);
+const cronResponse=await handler(new Request('https://test.invalid/?action=cron&recipient_id='+id,{headers:{'x-cron-key':'test-cron'}}));
+assert.equal(cronResponse.status,200);const cronQuery=new URLSearchParams(recipientQuery);assert.equal(cronQuery.get('id'),'eq.'+id);assert.equal(cronQuery.get('send_hour'),'lte.'+moscowDay().hour,'A recipient-scoped automatic job still respects the scheduled hour');
 console.log('PASS: user scopes, kitchen/hall/bar/operators formulas and names, multi-venue messages, history completeness, owner-only settings, validation, Moscow time and duplicate protection');
