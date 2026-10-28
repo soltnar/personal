@@ -36,7 +36,6 @@ export function reportMessage(rows, restaurant, date, roles=['kitchen']) {
     lines.push('',issues.length?'Персонал — требуют проверки:':'Персонал: замечаний по отметкам нет.');
     for(const person of issues)lines.push(`• ${person.person} — ${person.reviewReason||'проверьте отметки'}.`);
   }
-  lines.push('','Отчёт: https://soltnar.github.io/personal/');
   const text=lines.join('\n');
   if(text.length>4000)throw new Error('Список замечаний превышает размер сообщения; откройте отчёт');
   return text;
