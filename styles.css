@@ -770,3 +770,9 @@ a { color:var(--accent); }
 #telegramSettings .telegramScopePicker{border:1px solid var(--border);border-radius:10px;padding:12px}
 #telegramSettings .telegramScopePicker>summary{font-weight:650;cursor:pointer;font-size:14px}
 @media(max-width:700px){#telegramSettings .fallbackContent{padding:14px}#telegramForm{gap:10px}#telegramForm .hint{margin:2px 0;font-size:12px}#telegramForm input,#telegramForm select,#telegramSettings button{font-size:16px}#telegramForm .telegramSaveBar{top:0;padding:8px 0}.telegramSaveBar button{font-size:13px!important;padding:10px}.telegramBotAccess{padding:10px}#telegramScopes{max-height:320px}}
+.telegramUserToolbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.telegramUserToolbar>.label{flex:1;min-width:180px}.telegramUserToolbar>button{min-height:42px}
+@media(max-width:700px){.telegramUserToolbar>button{width:100%;font-size:13px!important;min-height:38px;padding:9px}}
+#telegramUserOpen{width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere;min-height:44px;background:#fff;border:1px solid var(--border);color:var(--text)}
+.telegramUserDialog{width:min(520px,calc(100vw - 28px));max-height:80dvh;overflow:auto;border:1px solid var(--border);border-radius:14px;padding:18px;color:var(--text);background:#fff}
+.telegramUserDialog::backdrop{background:#17222666}.telegramDialogHeader{display:flex;align-items:center;justify-content:space-between;gap:12px}.telegramDialogHeader h3{margin:0;font-size:18px}
+#telegramUserDialogList{display:grid;gap:8px}.telegramUserChoice{display:grid;gap:4px;width:100%;text-align:left;padding:12px;white-space:normal}.telegramUserChoice span{font-size:12px;font-weight:400;color:var(--muted)}

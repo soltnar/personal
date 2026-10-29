@@ -8,11 +8,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Персонал" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" type="image/svg+xml" href="icon.svg?v=5.0.22" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg?v=5.0.23" />
   <link rel="icon" type="image/png" sizes="32x32" href="personnel-icon-32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="personnel-icon-180.png" />
-  <link rel="stylesheet" href="styles.css?v=5.0.22" />
-  <link rel="stylesheet" href="role-workspace.css?v=5.0.22" />
+  <link rel="stylesheet" href="styles.css?v=5.0.23" />
+  <link rel="stylesheet" href="role-workspace.css?v=5.0.23" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -75,14 +75,15 @@
       <div class="fallbackContent">
         <p class="hint">Выберите сотрудника, разрешите ему бот и настройте рассылку по предприятиям и разделам.</p>
         <details class="telegramHelp"><summary>Как работает рассылка</summary><p class="hint">Общий бот @ilgp_bot: сотрудник нажимает «Старт», вы одобряете доступ здесь. Сводка приходит отдельно по каждому предприятию и только по выбранным разделам.</p></details>
+        <dialog id="telegramUserDialog" class="telegramUserDialog"><div class="telegramDialogHeader"><h3>Сотрудники Telegram</h3><button id="telegramUserClose" type="button" class="secondaryBtn" aria-label="Закрыть список">Закрыть</button></div><p id="telegramUserDialogStatus" role="status" class="hint"></p><div id="telegramUserDialogList"></div></dialog>
         <form id="telegramForm">
           <input id="telegramRecipientId" type="hidden">
-          <label class="label">Пользователь Telegram из приложения выручки<select id="telegramUser"></select></label>
+          <div class="telegramUserToolbar"><div class="label"><span id="telegramUserLabel">Сотрудник Telegram</span><button id="telegramUserOpen" type="button" class="secondaryBtn" aria-haspopup="dialog" aria-labelledby="telegramUserLabel telegramUserOpen">Выберите сотрудника ▾</button><select id="telegramUser" hidden aria-hidden="true" tabindex="-1"></select></div><button id="telegramUsersReload" type="button" class="secondaryBtn">Обновить пользователей</button></div>
           <p id="telegramDirectoryStatus" class="hint" role="status"></p>
           <div class="telegramBotAccess"><p id="telegramBotAccessStatus" role="status">Выберите сотрудника</p><div class="telegramInlineActions"><button id="telegramApprove" type="button" disabled>Разрешить доступ к боту</button><button id="telegramReject" type="button" class="secondaryBtn" hidden>Отклонить заявку</button></div></div>
           <details class="telegramHelp"><summary>Добавить сотрудника по Telegram ID</summary><div class="telegramAddUser"><label class="label">Telegram ID<input id="telegramNewUserId" type="text" inputmode="numeric" placeholder="Например, 123456789"></label><button id="telegramAuthorizeId" type="button" class="secondaryBtn">Разрешить бот по ID</button></div><p class="hint">Сотрудник должен открыть @ilgp_bot и нажать «Старт». Доступ к продажам и рассылка выручки не добавляются.</p></details>
           <div class="telegramSaveBar"><button type="submit">Сохранить рассылку</button><button id="telegramNew" type="button" class="secondaryBtn">Другой сотрудник</button></div>
-          <div class="telegramIdentityDetails" hidden><input id="telegramName" readonly maxlength="150"><input id="telegramChat" readonly></div>
+          <label class="label">Имя для списка рассылки<input id="telegramName" maxlength="150" placeholder="Имя или ФИО сотрудника"></label><input id="telegramChat" type="hidden">
           <label class="label">Час отправки по Москве<input id="telegramHour" type="number" min="7" max="18" value="10" required></label>
           <p id="telegramSourceRights" class="hint"></p>
           <button id="telegramImportRights" type="button" class="secondaryBtn" disabled>Подставить кухню и бар из прав выручки</button>
@@ -209,13 +210,13 @@
   <nav class="mobileNav" aria-label="Мобильная навигация"><a href="#overview" data-mobile-view="overview"><i data-feather="bar-chart-2" aria-hidden="true"></i>Обзор</a><a href="#enterprises" data-mobile-view="enterprises"><i data-feather="map-pin" aria-hidden="true"></i>Точки</a><a href="#quality" data-mobile-view="quality"><i data-feather="check-square" aria-hidden="true"></i>Проверка</a><button id="mobileMore" type="button"><i data-feather="more-horizontal" aria-hidden="true"></i>Ещё</button></nav>
   <dialog id="siteDialog" class="siteDialog" aria-labelledby="siteDialogTitle"><header><div><small id="siteDialogPeriod"></small><h2 id="siteDialogTitle"></h2></div><button id="closeSiteDialog" type="button" class="secondaryBtn" aria-label="Закрыть детали"><i data-feather="x" aria-hidden="true"></i></button></header><div id="siteDialogBody"></div></dialog>
 
-  <script src="script.js?v=5.0.22"></script>
-  <script src="report-ui.js?v=5.0.22"></script>
-  <script src="saby-login.js?v=5.0.22"></script>
-  <script src="workspace.js?v=5.0.22"></script>
-  <script src="access-ui.js?v=5.0.22"></script>
-  <script src="telegram-ui.js?v=5.0.22"></script>
+  <script src="script.js?v=5.0.23"></script>
+  <script src="report-ui.js?v=5.0.23"></script>
+  <script src="saby-login.js?v=5.0.23"></script>
+  <script src="workspace.js?v=5.0.23"></script>
+  <script src="access-ui.js?v=5.0.23"></script>
+  <script src="telegram-ui.js?v=5.0.23"></script>
   <script src="vendor/feather.min.js"></script>
-  <script src="role-workspace.js?v=5.0.22"></script>
+  <script src="role-workspace.js?v=5.0.23"></script>
 </body>
 </html>
