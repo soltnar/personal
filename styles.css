@@ -754,3 +754,19 @@ a { color:var(--accent); }
 .telegramRecipientActions{grid-column:2 / -1;display:flex;gap:8px;flex-wrap:wrap}
 #telegramRecipients .telegramRecipientActions button{margin:0}
 @media(max-width:700px){#telegramRecipients .telegramRecipientRow{grid-template-columns:1fr;gap:10px}.telegramRecipientActions{grid-column:auto}.telegramRecipientState{justify-self:start}}
+/* Keep the selected employee and saving controls reachable on a phone. */
+#telegramSettings{overflow:visible}
+#telegramSettings .telegramHelp{font-size:13px;border:1px solid var(--border);border-radius:9px;padding:10px 12px}
+#telegramSettings .telegramHelp summary{cursor:pointer;color:var(--muted)}
+.telegramBotAccess{border:1px solid var(--border);border-radius:10px;padding:12px;background:#f6faf8}
+.telegramBotAccess p{margin:0 0 8px;font-weight:650;font-size:13px}
+.telegramInlineActions,.telegramAddUser{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+.telegramAddUser .label{flex:1;min-width:140px}
+#telegramForm .telegramSaveBar{position:sticky;top:8px;z-index:8;display:flex;gap:8px;background:#fff;padding:10px 0;border-bottom:1px solid var(--border)}
+.telegramSaveBar button:first-child{flex:1}
+#telegramSettings button{appearance:none;-webkit-appearance:none}
+#telegramSettings button:not(.secondaryBtn){background:var(--accent);color:#fff}
+#telegramSettings button:disabled{opacity:.55}
+#telegramSettings .telegramScopePicker{border:1px solid var(--border);border-radius:10px;padding:12px}
+#telegramSettings .telegramScopePicker>summary{font-weight:650;cursor:pointer;font-size:14px}
+@media(max-width:700px){#telegramSettings .fallbackContent{padding:14px}#telegramForm{gap:10px}#telegramForm .hint{margin:2px 0;font-size:12px}#telegramForm input,#telegramForm select,#telegramSettings button{font-size:16px}#telegramForm .telegramSaveBar{top:0;padding:8px 0}.telegramSaveBar button{font-size:13px!important;padding:10px}.telegramBotAccess{padding:10px}#telegramScopes{max-height:320px}}

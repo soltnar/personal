@@ -1,6 +1,6 @@
 import { summarizeAttendance } from '../personnel-report/engine.mjs';
 import { reportMessage, moscowDay, subscriptionAssignments } from './message.mjs';
-import { readTelegramDirectory } from './directory.mjs';
+import { telegramDirectorySnapshot, changeTelegramAccess } from './directory.mjs';
 import { readHistoryMetrics } from '../personnel-report/history.mjs';
 const BASE=Deno.env.get('SUPABASE_URL')!,KEY=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const cors={'Access-Control-Allow-Origin':'https://soltnar.github.io','Access-Control-Allow-Headers':'authorization,apikey,content-type','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Cache-Control':'no-store'};
@@ -112,10 +112,11 @@ Deno.serve(async(req)=>{
     if(!auth.ok)return json({error:'Сессия истекла'},401);
     const user=await auth.json();
     if(!user.email_confirmed_at||String(user.email).toLowerCase()!=='soltnar@gmail.com')return json({error:'Только владелец'},403);
-    if(action==='directory'&&req.method==='GET')return json({users:await readTelegramDirectory(authorization)});
+    if(action==='directory'&&req.method==='GET')return json(await telegramDirectorySnapshot(authorization));
     if(action==='settings'&&req.method==='GET')return json({configured:!!await botToken(),recipients:await db('personnel_telegram_recipients?select=*&order=restaurant.asc'),log:await db('personnel_telegram_log?select=*&order=created_at.desc&limit=100')});
     if(req.method!=='POST')return json({error:'Метод не поддерживается'},405);
     const body=await req.json();
+    if(action==='access')return json(await changeTelegramAccess(authorization,body));
     if(action==='save') {
       let assignments;
       try {assignments=subscriptionAssignments(body.assignments||[{restaurant:body.restaurant,roles:body.roles||['kitchen']}]);}
@@ -145,5 +146,5 @@ Deno.serve(async(req)=>{
       return json(await dispatch(date,body.id,false,true,body.remaining));
     }
     return json({error:'Неизвестное действие'},400);
-  }catch(error){return json({error:error instanceof Error?error.message:'Ошибка рассылки'},500);}
+  }catch(error){return json({error:error instanceof Error?error.message:'Ошибка рассылки'},Number((error as {status?:number})?.status)||500);}
 });

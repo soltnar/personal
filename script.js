@@ -1164,6 +1164,7 @@ function rebuildMappedRecords(selectAllRestaurants = false) {
   mappingStats = { matched: 0, total: baseRecords.length };
 
   const exits = new Map();
+  const entries = new Set(baseRecords.filter(r=>r.automaticAttendance&&r.direction==='Вход').map(r=>`${r.dateIso}|${r.personId||r.personKey}`));
   const dayLocations = new Map();
   baseRecords.filter((r) => r.automaticAttendance).forEach((r) => {
     const key = `${r.dateIso}|${r.personId || r.personKey}`;
@@ -1189,8 +1190,8 @@ function rebuildMappedRecords(selectAllRestaurants = false) {
     return {
       ...r,
       restaurant: mappedRestaurant || "Подразделение не определено",
-      hasConflict: r.automaticAttendance ? !lastExit || !mappedRestaurant : staffConflictKeys.has(r.personKey),
-      reviewReason: r.automaticAttendance && !lastExit ? "нет отметки выхода" : ""
+      hasConflict: r.automaticAttendance ? !lastExit || !entries.has(`${r.dateIso}|${r.personId||r.personKey}`) || !mappedRestaurant : staffConflictKeys.has(r.personKey),
+      reviewReason: r.automaticAttendance ? [!entries.has(`${r.dateIso}|${r.personId||r.personKey}`)?"нет отметки входа":"",!lastExit?"нет отметки выхода":"",!mappedRestaurant?"точка не определена":""].filter(Boolean).join('; ') : ""
     };
   });
 
@@ -1291,7 +1292,9 @@ function calculate(records) {
   });
 
   Array.from(personDay.values()).forEach((item) => {
-    const shiftValue = workedSecondsToShift(calcWorkedSeconds(item.events));
+    const singleMark=item.events.length===1;
+    if(singleMark){item.hasConflict=true;item.reviewReason ||= item.events[0].direction==='Вход'?'нет отметки выхода':'нет отметки входа';}
+    const shiftValue = singleMark ? 1 : workedSecondsToShift(calcWorkedSeconds(item.events));
     if (shiftValue === 0) return;
 
     const key = `${item.dateIso}||${item.restaurant}`;

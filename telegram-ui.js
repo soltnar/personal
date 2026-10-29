@@ -1,7 +1,7 @@
 const notifyPanel=document.getElementById('telegramSettings');
 const notifyLabels={kitchen:'Кухня',hall:'Зал',bar:'Бар',delivery:'Доставка',operators:'Операторы'};
 const notifyStatus=document.getElementById('telegramStatus');
-let notifyEpoch=0,notifyDirectory=[],notifyRecipients=[];
+let notifyEpoch=0,notifyDirectory=[],notifyRecipients=[],notifyNewUserRevision;
 async function notifyRequest(action,body) {
   const session=await getReportSession();
   if(!session||!workspaceIsOwner())throw new Error('Войдите как владелец через Google');
@@ -19,23 +19,28 @@ function notifyScopeLabel(assignments) {return assignments.map(item=>`${item.res
 function renderNotifyDirectory(selected='') {
   const picker=document.getElementById('telegramUser');picker.replaceChildren();
   const empty=document.createElement('option');empty.value='';empty.textContent='Выберите пользователя Telegram';picker.append(empty);
-  for(const user of notifyDirectory){const option=document.createElement('option');option.value=user.id;option.textContent=user.name+' · '+user.id+(user.status==='approved'?'':' · доступ не разрешён');option.disabled=user.status!=='approved';picker.append(option);}
+  for(const user of notifyDirectory){const option=document.createElement('option');option.value=user.id;option.textContent=user.name+' · '+user.id+(user.status==='approved'?'':' · доступ не разрешён');picker.append(option);}
   if(selected&&!notifyDirectory.some(user=>user.id===selected)){const option=document.createElement('option');option.value=selected;option.textContent='Сохранённый получатель · '+selected;picker.append(option);}
   picker.value=selected;
 }
 function showNotifySource(id) {
   const user=notifyDirectory.find(user=>user.id===id);
+  const labels={approved:'Доступ в боте разрешён',pending:'Заявка ожидает решения',rejected:'Заявка отклонена',revoked:'Доступ в боте отключён'};
+  document.getElementById('telegramBotAccessStatus').textContent=user?(labels[user.status]||'Статус неизвестен'):'Выберите сотрудника';
+  document.getElementById('telegramApprove').hidden=!user||user.admin||user.status==='approved';
+  document.getElementById('telegramApprove').disabled=!user||user.admin||user.status==='approved';
+  document.getElementById('telegramReject').hidden=!user||user.admin||user.status!=='pending';
   document.getElementById('telegramSourceRights').textContent=user?'Права в выручке: '+user.accessLabel+'. Кухню и бар можно подставить; зал, доставка и операторы назначаются отдельно.':'Выберите пользователя из приложения выручки. Сохранённые настройки рассылки не меняются при обновлении списка.';
   document.getElementById('telegramImportRights').disabled=!user||user.status!=='approved'||!user.suggestedAssignments.length;
 }
-function resetNotifyForm(){document.getElementById('telegramForm').reset();document.getElementById('telegramRecipientId').value='';setNotifyAssignments();document.getElementById('telegramUser').value='';showNotifySource('');}
+function resetNotifyForm(){document.getElementById('telegramForm').reset();document.getElementById('telegramRecipientId').value='';setNotifyAssignments();document.getElementById('telegramUser').value='';showNotifySource('');document.querySelector('.telegramSaveBar button[type=submit]').textContent='Сохранить рассылку';}
 async function loadNotify() {
   const epoch=notifyEpoch;const [settings,directory]=await Promise.allSettled([notifyRequest('settings'),notifyRequest('directory')]);
   if(settings.status==='rejected')throw settings.reason;
   const result=settings.value;
   if(!workspaceIsOwner()||epoch!==notifyEpoch)return;
   const selected=document.getElementById('telegramChat').value;
-  if(directory.status==='fulfilled')notifyDirectory=directory.value.users;
+  if(directory.status==='fulfilled'){notifyDirectory=directory.value.users;notifyNewUserRevision=directory.value.newUserRevision;}
   renderNotifyDirectory(selected);showNotifySource(selected);
   document.getElementById('telegramDirectoryStatus').textContent=directory.status==='fulfilled'?'Пользователи и права загружены из приложения выручки.':directory.reason.message;
   notifyStatus.textContent=result.configured?'Бот подключён. Для каждого пользователя выберите предприятия и разделы. Время — московское.':'Бот ещё не подключён.';
@@ -65,20 +70,20 @@ for(const venue of accessVenues.filter(name=>name!=='Фабрика кухни')
 notifyPanel.addEventListener('toggle',()=>{if(notifyPanel.open&&workspaceIsOwner())loadNotify().catch(notifyError);});
 document.getElementById('telegramDate').value=yesterdayMoscow();
 document.getElementById('telegramReload').onclick=()=>loadNotify().catch(notifyError);
-document.getElementById('telegramForm').onsubmit=async(event)=>{event.preventDefault();const button=event.submitter;button.disabled=true;try{const assignments=notifyAssignments();if(!assignments.length)throw new Error('Выберите хотя бы одно предприятие и раздел');await notifyRequest('save',{id:document.getElementById('telegramRecipientId').value||undefined,assignments,name:document.getElementById('telegramName').value,chat_id:document.getElementById('telegramChat').value,send_hour:Number(document.getElementById('telegramHour').value),enabled:document.getElementById('telegramEnabled').checked});await loadNotify();}catch(error){notifyError(error);}finally{button.disabled=false;}};
+document.getElementById('telegramForm').onsubmit=async(event)=>{event.preventDefault();const button=event.submitter;button.disabled=true;try{const selectedUser=notifyDirectory.find(user=>user.id===document.getElementById('telegramChat').value);if(!selectedUser||selectedUser.status!=='approved')throw new Error('Сначала разрешите сотруднику доступ к боту');const assignments=notifyAssignments();if(!assignments.length)throw new Error('Выберите хотя бы одно предприятие и раздел');await notifyRequest('save',{id:document.getElementById('telegramRecipientId').value||undefined,assignments,name:document.getElementById('telegramName').value,chat_id:document.getElementById('telegramChat').value,send_hour:Number(document.getElementById('telegramHour').value),enabled:document.getElementById('telegramEnabled').checked});await loadNotify();}catch(error){notifyError(error);}finally{button.disabled=false;}};
 document.getElementById('telegramPreview').onclick=async()=>{try{const epoch=notifyEpoch,result=await notifyRequest('preview',{assignments:notifyAssignments(),date:document.getElementById('telegramDate').value});if(workspaceIsOwner()&&epoch===notifyEpoch)document.getElementById('telegramMessage').textContent=result.text;}catch(error){notifyError(error);}};
-new MutationObserver(()=>{if(!workspaceIsOwner()){notifyEpoch++;notifyDirectory=[];notifyRecipients=[];renderNotifyDirectory();document.getElementById('telegramDirectoryStatus').textContent='';for(const id of ['telegramRecipients','telegramLog','telegramMessage'])document.getElementById(id).replaceChildren();resetNotifyForm();notifyStatus.textContent='';}}).observe(document.getElementById('usersNav'),{attributes:true,attributeFilter:['hidden']});
+new MutationObserver(()=>{if(!workspaceIsOwner()){notifyEpoch++;notifyDirectory=[];notifyRecipients=[];notifyNewUserRevision=undefined;renderNotifyDirectory();document.getElementById('telegramDirectoryStatus').textContent='';for(const id of ['telegramRecipients','telegramLog','telegramMessage'])document.getElementById(id).replaceChildren();resetNotifyForm();notifyStatus.textContent='';}}).observe(document.getElementById('usersNav'),{attributes:true,attributeFilter:['hidden']});
 document.getElementById('telegramNew').onclick=resetNotifyForm;
 
 document.getElementById('telegramUser').onchange=()=>{
   const id=document.getElementById('telegramUser').value,user=notifyDirectory.find(item=>item.id===id);
-  if(!user||user.status!=='approved')return;
+  if(!user)return;
   resetNotifyForm();document.getElementById('telegramUser').value=id;
   document.getElementById('telegramName').value=user.name;document.getElementById('telegramChat').value=id;
   const existing=notifyRecipients.find(item=>item.chat_id===id);
   if(existing){document.getElementById('telegramRecipientId').value=existing.id;document.getElementById('telegramHour').value=existing.send_hour;document.getElementById('telegramEnabled').checked=existing.enabled;setNotifyAssignments(existing.assignments||[{restaurant:existing.restaurant,roles:['kitchen']}]);}
-  else setNotifyAssignments(user.suggestedAssignments.filter(item=>accessVenues.includes(item.restaurant)));
-  showNotifySource(id);
+  else if(user.status==='approved')setNotifyAssignments(user.suggestedAssignments.filter(item=>accessVenues.includes(item.restaurant)));
+  showNotifySource(id);document.querySelector('.telegramSaveBar button[type=submit]').title=user.name;
 };
 document.getElementById('telegramImportRights').onclick=()=>{
   const user=notifyDirectory.find(item=>item.id===document.getElementById('telegramUser').value);
@@ -87,3 +92,18 @@ document.getElementById('telegramImportRights').onclick=()=>{
   document.getElementById('telegramMessage').replaceChildren();
   notifyStatus.textContent='Подставлены кухня и бар из прав выручки. Проверьте разделы и сохраните получателя. Зал и операторы выбираются отдельно.';
 };
+
+async function changeNotifyAccess(id,status,revision) {
+  const epoch=notifyEpoch,panel=document.getElementById('telegramForm');panel.inert=true;
+  try {
+    await notifyRequest('access',{id,status,revision});
+    if(!workspaceIsOwner()||epoch!==notifyEpoch)return;
+    await loadNotify();
+    if(!workspaceIsOwner()||epoch!==notifyEpoch)return;
+    document.getElementById('telegramUser').value=String(id);document.getElementById('telegramUser').onchange();
+    notifyStatus.textContent=status==='approved'?'Доступ к боту разрешён. Выберите разделы и сохраните рассылку.':'Заявка отклонена.';
+  }catch(error){notifyError(error);}finally{panel.inert=false;}
+}
+document.getElementById('telegramApprove').onclick=()=>{const user=notifyDirectory.find(item=>item.id===document.getElementById('telegramUser').value);if(user&&!user.admin)changeNotifyAccess(user.id,'approved',user.revision);};
+document.getElementById('telegramReject').onclick=()=>{const user=notifyDirectory.find(item=>item.id===document.getElementById('telegramUser').value);if(user&&!user.admin&&user.status==='pending')changeNotifyAccess(user.id,'rejected',user.revision);};
+document.getElementById('telegramAuthorizeId').onclick=()=>{const id=document.getElementById('telegramNewUserId').value.trim();if(!/^[1-9]\d{4,19}$/.test(id)||!Number.isSafeInteger(Number(id)))return notifyError(new Error('Введите корректный числовой Telegram ID'));const user=notifyDirectory.find(item=>item.id===id);if(user?.status==='approved'){document.getElementById('telegramUser').value=id;document.getElementById('telegramUser').onchange();return;}changeNotifyAccess(id,'approved',user?.revision||notifyNewUserRevision);};

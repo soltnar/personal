@@ -9,12 +9,12 @@ const metrics=[{dateIso:date,restaurant:venue,orders:10,revenue:30000}],network=
 const rows=summarizeAttendance(days,sales,metrics,network,[date]),message=kitchenMessage(rows,venue,date);
 assert(message.includes('Без выхода — нет отметки выхода'));
 assert(message.includes('Без входа — нет отметки входа'));
-assert(message.includes('Смены: 1'));
-assert(message.includes('100 000 ₽/смену'));
+assert(message.includes('Смены: 3'));
+assert(message.includes('33 333,33 ₽/смену'));
 for(const name of ['Бармен секрет','Администратор зала','Другая точка','Неизвестная должность'])assert(!message.includes(name));
 assert(message.includes('Нормальная смена — 1 смена.'));
 const roster=message.split('В сменах учтены:')[1].split('Выработка:')[0];
-assert(!roster.includes('Без выхода'));assert(!roster.includes('Без входа'));
+assert(roster.includes('Без выхода — 1 смена.'));assert(roster.includes('Без входа — 1 смена.'));
 const halfDays=[{work_date:date,status:'ready',rows:[event('Полсмены',1,'10:00:00'),event('Полсмены',0,'14:00:00')]}];
 const half=reportMessage(summarizeAttendance(halfDays,sales),venue,date,['kitchen']);
 assert(half.includes('Смены: 0,5'));assert(half.includes('Полсмены — 0,5 смены.'));
@@ -35,7 +35,7 @@ let handler,token='',isOwner=true,ready=true,records=[],recipients=[],sent=[],ed
 globalThis.Deno={env:{get:key=>key==='TELEGRAM_BOT_TOKEN'?token:key==='SUPABASE_URL'?'https://test.invalid':'key'},serve:fn=>handler=fn};
 globalThis.fetch=async(url,init={})=>{
  const parsed=new URL(url),path=parsed.pathname;
- if(parsed.hostname==='viruchki.ilgp.ru')return Response.json(parsed.searchParams.get('action')==='catalog'?{restaurants:[],warehouses:[]}:{users:[{id:123456,firstName:'Сотрудник',status:'approved',salesAccess:{mode:'all'}}]});
+ if(parsed.hostname==='viruchki.ilgp.ru')return Response.json(parsed.searchParams.get('action')==='catalog'?{restaurants:[],warehouses:[]}:{users:[{id:123456,firstName:'Сотрудник',revision:'r1',status:'approved',salesAccess:{mode:'all'}}]});
  if(parsed.hostname==='history.ilgp.ru')return historyReady?Response.json({metrics,network,completeDates:[date]}):Response.json({error:'missing'},{status:503});
  if(parsed.hostname==='api.telegram.org'){const editing=path.endsWith('editMessageText');(editing?edited:sent).push(JSON.parse(init.body));if(editing&&editMode!=='ok')return Response.json({ok:false,error_code:400,description:editMode==='unchanged'?'Bad Request: message is not modified':'Bad Request: message to edit not found'},{status:400});return Response.json({ok:true,result:{message_id:77}});}
  if(path==='/auth/v1/user')return Response.json({email:isOwner?'soltnar@gmail.com':'other@example.org',email_confirmed_at:date});
@@ -57,9 +57,10 @@ globalThis.fetch=async(url,init={})=>{
 await import('../supabase/functions/personnel-notify/index.ts');
 const call=(action,body,auth=true)=>handler(new Request(`https://test.invalid/?action=${action}`,{method:body?'POST':'GET',headers:auth?{authorization:'Bearer test'}:{},...(body?{body:JSON.stringify(body)}:{})}));
 assert.equal((await call('settings',null,false)).status,401);
-isOwner=false;for(const action of ['settings','directory','save','preview','send'])assert.equal((await call(action,action==='settings'?undefined:{})).status,403);isOwner=true;
+isOwner=false;for(const action of ['settings','directory','access','save','preview','send'])assert.equal((await call(action,action==='settings'?undefined:{})).status,403);isOwner=true;
 assert.equal((await (await call('settings')).json()).configured,false);
 assert.equal((await (await call('directory')).json()).users[0].id,'123456');
+assert.equal((await call('access',{id:'123456',status:'approved',revision:'r1'})).status,200);
 const assignments=[{restaurant:venue,roles:['hall','bar']},{restaurant:centre,roles:['operators']}];
 assert.equal((await call('save',{assignments,name:'Руководитель',chat_id:'123456',send_hour:10,enabled:false})).status,200);
 assert.equal(lastSave.assignments.length,2);assert.deepEqual(lastSave.assignments[0].roles,['hall','bar']);

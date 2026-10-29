@@ -281,7 +281,7 @@ export function summarizeAttendance(days, revenues, deliveryOrders = [], network
       const event = {...(exit || events.at(-1))};
       if(restaurant==="Коминтерна 166 CALL CENTRE"&&event.group==="hall")event.group="operators";
       const worked = calcWorkedSeconds(events.map(e=>({direction:Number(e.actionType)===1?"Вход":"Выход",absSec:Date.parse(e.dateTime.replace(" ","T")+"+03:00")/1000})));
-      const shift = workedSecondsToShift(worked);
+      const shift = events.length===1 ? 1 : workedSecondsToShift(worked);
       const row = get(day.work_date,restaurant);
       if (!event.group) {
         row.unclassified.push({person:event.person,position:event.position||"Должность не указана",shift,hasConflict:true,reviewReason:"должность не отнесена ни к одной категории",marks:events.map(e=>({dateTime:e.dateTime,actionType:e.actionType}))});
