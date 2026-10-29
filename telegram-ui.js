@@ -48,7 +48,7 @@ async function loadNotify() {
   notifyStatus.textContent=result.configured?'Бот подключён. Для каждого пользователя выберите предприятия и разделы. Время — московское.':'Бот ещё не подключён.';
   notifyRecipients=result.recipients;
   const list=document.getElementById('telegramRecipients');list.replaceChildren();
-  for(const recipient of result.recipients){
+  for(const recipient of result.recipients.filter(recipient=>recipient.enabled)){
     const assignments=recipient.assignments||[{restaurant:recipient.restaurant,roles:['kitchen']}];
     const item=document.createElement('article');item.className='telegramRecipientRow';
     const identity=document.createElement('div');identity.className='telegramRecipientIdentity';const label=document.createElement('strong');label.textContent=recipient.name;const id=document.createElement('span');id.textContent='Telegram '+recipient.chat_id;identity.append(label,id);item.append(identity);

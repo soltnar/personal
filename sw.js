@@ -1,5 +1,5 @@
-const SHELL='personnel-shell-v5.0.23';
-const FILES=['./','./index.html','./styles.css?v=5.0.23','./script.js?v=5.0.23','./report-ui.js?v=5.0.23','./saby-login.js?v=5.0.23','./workspace.js?v=5.0.23','./access-ui.js?v=5.0.23','./telegram-ui.js?v=5.0.23','./role-workspace.css?v=5.0.23','./role-workspace.js?v=5.0.23','./vendor/feather.min.js','./manifest.webmanifest','./icon.svg?v=5.0.23','./personnel-icon-32.png','./personnel-icon-180.png','./personnel-icon-192.png','./personnel-icon-512.png','./personnel-icon-maskable-512.png'];
+const SHELL='personnel-shell-v5.0.24';
+const FILES=['./','./index.html','./styles.css?v=5.0.24','./script.js?v=5.0.24','./report-ui.js?v=5.0.24','./saby-login.js?v=5.0.24','./workspace.js?v=5.0.24','./access-ui.js?v=5.0.24','./telegram-ui.js?v=5.0.24','./role-workspace.css?v=5.0.24','./role-workspace.js?v=5.0.24','./vendor/feather.min.js','./manifest.webmanifest','./icon.svg?v=5.0.24','./personnel-icon-32.png','./personnel-icon-180.png','./personnel-icon-192.png','./personnel-icon-512.png','./personnel-icon-maskable-512.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(SHELL).then(cache=>cache.addAll(FILES)));self.skipWaiting();});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('personnel-shell-')&&k!==SHELL).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',event=>{
