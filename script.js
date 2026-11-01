@@ -1220,6 +1220,8 @@ function calcWorkedSeconds(events) {
 
   sorted.forEach((e) => {
     if (e.direction === "Вход") {
+      // Repeated entry without an exit must not erase the beginning of the shift.
+      if (inWork) return;
       inWork = true;
       startSec = e.absSec;
       return;
