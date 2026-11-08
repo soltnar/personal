@@ -102,14 +102,14 @@ function refreshWorkspaceReport(rows) {
     if((row.coverage?.[role] || productivitySample(row,role)).missing) gaps++;
     for(const person of row.details?.[role] || []) if(person.hasConflict) checks.push({row, person, label});
   }
-  for(const row of daily)for(const person of row.unclassified||[])(person.excludedFromDelivery?informational:checks).push({row,person,label:person.excludedFromDelivery?'Вне расчётов доставки':'Без категории'});
+  for(const row of daily)for(const person of row.unclassified||[])(person.excludedFromDelivery?informational:checks).push({row,person,label:person.excludedFromDelivery?'Вне расчётов ресторанов':'Без категории'});
   const target = document.getElementById('attendanceReviews');
   target.replaceChildren();
   const heading = document.createElement('h3');heading.className = 'panelTitle';heading.textContent = `Отметки сотрудников · ${checks.length}`;target.append(heading);
   const explanation = document.createElement('p');explanation.className = 'hint';explanation.textContent = rows.length ? (checks.length ? 'Причины проверки отмечены рядом с сотрудниками в раскрытии соответствующего дня.' : 'Неоднозначных отметок в текущей выборке нет.') : 'Сначала откройте отчёт за нужный период.';target.append(explanation);
   const list = document.createElement('div');list.className = 'gapList reviewList';
   const info=document.createElement('details');info.className='excludedAttendance';
-  const infoTitle=document.createElement('summary');infoTitle.textContent='Водитель газели — отметки вне расчётов';
+  const infoTitle=document.createElement('summary');infoTitle.textContent='Служебный персонал — вне расчётов';
   const infoList=document.createElement('div');infoList.className='gapList';info.append(infoTitle,infoList);
   for(const {row,person,label} of [...checks,...informational]) {
     const item = document.createElement('article'), content = document.createElement('div'), title = document.createElement('strong'), description = document.createElement('p'), button = document.createElement('button');

@@ -285,14 +285,14 @@ export function summarizeAttendance(days, revenues, deliveryOrders = [], network
       const worked = calcWorkedSeconds(events.map(e=>({direction:Number(e.actionType)===1?"Вход":"Выход",absSec:Date.parse(e.dateTime.replace(" ","T")+"+03:00")/1000})));
       const shift = events.length===1 ? 1 : workedSecondsToShift(worked);
       const row = get(day.work_date,restaurant);
-      if (!event.group) {
-        row.unclassified.push({person:event.person,position:event.position||"Должность не указана",shift,hasConflict:true,reviewReason:"должность не отнесена ни к одной категории",marks:events.map(e=>({dateTime:e.dateTime,actionType:e.actionType}))});
+      // Owner-confirmed service staff: preserve marks outside restaurant productivity.
+      if(["кислицын сергей александрович","старков александр сергеевич","богаткин сергей вячеславович"].includes(normalizeFio(event.person))){
+        row.unclassified.push({person:event.person,position:event.position||"Должность не указана",shift,hasConflict:true,excludedFromDelivery:true,excludedFromCalculations:true,reviewReason:"Служебный персонал — вне расчётов смен и выработки ресторанов",marks:events.map(e=>({dateTime:e.dateTime,actionType:e.actionType,location:place(e)}))});
         row.hasConflict=true;
         continue;
       }
-      // Owner-confirmed Gazelle driver; does not deliver restaurant orders.
-      if(event.group==="delivery"&&normalizeFio(event.person)==="кислицын сергей александрович"){
-        row.unclassified.push({person:event.person,position:event.position||"Должность не указана",shift,hasConflict:true,excludedFromDelivery:true,reviewReason:"Водитель газели — исключён из расчётов доставки",marks:events.map(e=>({dateTime:e.dateTime,actionType:e.actionType,location:place(e)}))});
+      if (!event.group) {
+        row.unclassified.push({person:event.person,position:event.position||"Должность не указана",shift,hasConflict:true,reviewReason:"должность не отнесена ни к одной категории",marks:events.map(e=>({dateTime:e.dateTime,actionType:e.actionType}))});
         row.hasConflict=true;
         continue;
       }

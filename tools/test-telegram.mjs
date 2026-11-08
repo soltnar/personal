@@ -35,7 +35,7 @@ let handler,token='',isOwner=true,ready=true,records=[],recipients=[],sent=[],ed
 globalThis.Deno={env:{get:key=>key==='TELEGRAM_BOT_TOKEN'?token:key==='SUPABASE_URL'?'https://test.invalid':'key'},serve:fn=>handler=fn};
 globalThis.fetch=async(url,init={})=>{
  const parsed=new URL(url),path=parsed.pathname;
- if(parsed.hostname==='viruchki.ilgp.ru')return Response.json(parsed.searchParams.get('action')==='catalog'?{restaurants:[],warehouses:[]}:{users:[{id:123456,firstName:'Сотрудник',revision:'r1',status:'approved',salesAccess:{mode:'all'}}]});
+ if((parsed.hostname==='viruchki.ilgp.ru'||(parsed.hostname==='ilgp.ru'&&parsed.pathname==='/revenue-bot/api/telegram-settings')))return Response.json(parsed.searchParams.get('action')==='catalog'?{restaurants:[],warehouses:[]}:{users:[{id:123456,firstName:'Сотрудник',revision:'r1',status:'approved',salesAccess:{mode:'all'}}]});
  if(parsed.hostname==='history.ilgp.ru')return historyReady?Response.json({metrics,network,completeDates:[date]}):Response.json({error:'missing'},{status:503});
  if(parsed.hostname==='api.telegram.org'){const editing=path.endsWith('editMessageText');(editing?edited:sent).push(JSON.parse(init.body));if(editing&&editMode!=='ok')return Response.json({ok:false,error_code:400,description:editMode==='unchanged'?'Bad Request: message is not modified':'Bad Request: message to edit not found'},{status:400});return Response.json({ok:true,result:{message_id:77}});}
  if(path==='/auth/v1/user')return Response.json({email:isOwner?'soltnar@gmail.com':'other@example.org',email_confirmed_at:date});

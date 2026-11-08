@@ -23,7 +23,7 @@ assert.equal(excluded.unclassified.length,1);
 assert.equal(excluded.unclassified[0].excludedFromDelivery,true);
 assert.equal(excluded.unclassified[0].marks.length,2);
 assert.equal(excluded.unclassified[0].marks[0].location,'Ленина, 36 Самурай');
-assert.match(excluded.unclassified[0].reviewReason,/Водитель газели/);
+assert.match(excluded.unclassified[0].reviewReason,/Служебный персонал/);
 assert.equal(restrictRows([excluded],[],true)[0].unclassified.length,1);
 assert(!Object.hasOwn(restrictRows([excluded],[{restaurant:excluded.restaurant,roles:['delivery']}],false)[0],'unclassified'));
 console.log('PASS: excluded driver retains locations and entrance/exit marks in owner review without adding delivery shifts');
@@ -31,3 +31,11 @@ console.log('PASS: excluded driver retains locations and entrance/exit marks in 
 const technician=summarizeAttendance([{work_date:date,rows:marks('Самурай Доставка Моторный пер 2к1','Менеджер ремонтно-технического отд. упр. (Категория 3500/9)')}],[])[0];
 assert.equal(technician.hall,0);assert.equal(technician.unclassified.length,1);
 console.log('PASS: maintenance manager remains visible in review and never enters hall staffing');
+
+for(const [person,position] of [['Старков Александр Сергеевич','Менеджер ремонтно-технического отд.'],['Богаткин Сергей Вячеславович','Бар-менеджер']]) {
+ const row=summarizeAttendance([{work_date:date,rows:marks('Самурай Ленина 36',position).map(event=>({...event,person}))}],[])[0];
+ assert.equal(row.total,0);assert.equal(row.bar,0);assert.equal(row.unclassified.length,1);
+ assert.equal(row.unclassified[0].excludedFromCalculations,true);assert.equal(row.unclassified[0].marks.length,2);
+ assert(!row.unclassified[0].reviewReason.includes('должность не отнесена'));
+}
+console.log('PASS: Starkov and Bogatkin retain marks in service staff and do not contribute restaurant shifts');
