@@ -10,6 +10,7 @@ let handler,background=[],failPage=1,calls=[],late=false,deny=false;
 const oldTime='2026-11-06T10:00:00Z';
 const days=new Map(['2026-11-05','2026-11-06'].map(day=>[day,{work_date:day,status:'ready',rows:[{person:'Old snapshot',cacheVersion:4}],updated_at:oldTime,error:null,sync_progress:null}]));
 const fetchMock=async(url,init={})=>{
+ assert(String(url).length<1500,'Queue claims must not serialize raw pages into URLs');
  const u=new URL(url);
  if(u.pathname==='/auth/v1/user')return Response.json({email:deny?'other@example.com':'soltnar@gmail.com'});
  if(u.pathname.endsWith('/attendance_sync_config'))return Response.json([{}]);
@@ -26,8 +27,11 @@ const fetchMock=async(url,init={})=>{
      const equal=u.searchParams.get('sync_progress');
      if(equal==='is.null'&&entry.sync_progress!==null)return Response.json([]);
      if(equal?.startsWith('eq.')&&!isDeepStrictEqual(entry.sync_progress,JSON.parse(equal.slice(3))))return Response.json([]);
-     const lease=u.searchParams.get('sync_progress->>lease_id');
-     if(lease&&entry.sync_progress?.lease_id!==lease.slice(3))return Response.json([]);
+     for(const key of ['requested_at','lease_id','lease_at']){
+       const filter=u.searchParams.get('sync_progress->>'+key);
+       if(filter==='is.null'&&entry.sync_progress?.[key]!=null)return Response.json([]);
+       if(filter?.startsWith('eq.')&&entry.sync_progress?.[key]!==filter.slice(3))return Response.json([]);
+     }
      Object.assign(entry,JSON.parse(init.body));return Response.json([entry]);
    }
    if(init.method==='POST'){

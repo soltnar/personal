@@ -77,6 +77,13 @@ async function cacheRequest(path: string, init: RequestInit = {}) {
   return text ? JSON.parse(text) : [];
 }
 
+function progressFilter(progress: Record<string,unknown> | null | undefined) {
+  if(!progress)return '&sync_progress=is.null';
+  // Compare only small queue/lease identifiers. Never put accumulated page rows
+  // in a URL: even a few pages exceed the HTTP client's URL length limit.
+  return ['requested_at','lease_id','lease_at'].map(key=>`&sync_progress->>${key}=${progress[key]?'eq.'+encodeURIComponent(String(progress[key])):'is.null'}`).join('');
+}
+
 async function readCache(from: string, to: string) {
   const query = `?select=work_date,status,rows,error,updated_at,sync_progress&work_date=gte.${from}&work_date=lte.${to}&order=work_date.asc`;
   return await cacheRequest(query) as Array<{
@@ -437,7 +444,7 @@ Deno.serve(async (req) => {
       for(let offset=0;offset<queued.length;offset+=8){
         await Promise.all(queued.slice(offset,offset+8).map(async({date,entry})=>{
           const progress={requested_at:forceBefore||new Date().toISOString(),next_page:0,rows:[],complete:false,paused:true,failures:0};
-          const result=entry?await cacheRequest(`?work_date=eq.${date}&updated_at=eq.${encodeURIComponent(entry.updated_at)}&sync_progress=${entry.sync_progress?'eq.'+encodeURIComponent(JSON.stringify(entry.sync_progress)):'is.null'}`,{method:'PATCH',body:JSON.stringify({sync_progress:progress,error:null})})
+          const result=entry?await cacheRequest(`?work_date=eq.${date}&updated_at=eq.${encodeURIComponent(entry.updated_at)}${progressFilter(entry.sync_progress)}`,{method:'PATCH',body:JSON.stringify({sync_progress:progress,error:null})})
             :await cacheRequest('?on_conflict=work_date',{method:'POST',headers:{Prefer:'return=representation,resolution=ignore-duplicates'},body:JSON.stringify({work_date:date,status:'loading',rows:[],error:null,sync_progress:progress,updated_at:new Date().toISOString()})});
           if(result.length)byDate.set(date,result[0]);
         }));
@@ -449,7 +456,7 @@ Deno.serve(async (req) => {
     let syncingDates:string[]=[];
     if(maySync&&!activeLoading&&nextMissing){
       const lease={...nextMissing.sync_progress,lease_id:crypto.randomUUID(),lease_at:new Date().toISOString(),paused:false};
-      const claim=await cacheRequest(`?work_date=eq.${nextMissing.work_date}&sync_progress=eq.${encodeURIComponent(JSON.stringify(nextMissing.sync_progress))}`,{method:'PATCH',body:JSON.stringify({sync_progress:lease})});
+      const claim=await cacheRequest(`?work_date=eq.${nextMissing.work_date}${progressFilter(nextMissing.sync_progress)}`,{method:'PATCH',body:JSON.stringify({sync_progress:lease})});
       if(claim.length){syncingDates=[nextMissing.work_date];EdgeRuntime.waitUntil(syncCacheDates(syncingDates,claim));}
     }
 
