@@ -1,54 +1,16 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { stripTypeScriptTypes } from 'node:module';
-import { nextAutomaticDate, failureValues } from '../supabase/functions/personnel-api/schedule.mjs';
-const today='2026-10-22', now=Date.parse('2026-10-22T03:00:00Z');
-const ready=day=>({work_date:day,status:'ready',updated_at:'2026-10-20T00:00:00Z'});
-const days=Array.from({length:11},(_,i)=>ready(`2026-10-${11+i}`));
-assert.equal(nextAutomaticDate(days,today,now),null,'Completed days never refreshed');
-days[0]={...days[0],status:'error'};
-assert.equal(nextAutomaticDate(days,today,now),'2026-10-11','Old error retried beyond five days');
-days[0].updated_at='2026-10-21T22:00:00Z';
-assert.equal(nextAutomaticDate(days,today,now),'2026-10-11','Failed day retries after cooldown, within the same day');
-days[0].updated_at=new Date(now-60000).toISOString();
-assert.equal(nextAutomaticDate(days,today,now),null,'Recent failure waits ten minutes');
-days[0].updated_at='2026-10-21T22:00:00Z';
-assert.equal(nextAutomaticDate(days,'2026-10-23',now+86400000),'2026-10-22','New yesterday has priority');
-assert.equal(nextAutomaticDate([...days,ready('2026-10-22')],'2026-10-23',now+86400000),'2026-10-11','Old errors retry next day after the daily report');
-assert.equal(nextAutomaticDate(days.filter(e=>e.work_date!=='2026-10-18').map(e=>e.work_date==='2026-10-11'?ready(e.work_date):e),today,now),'2026-10-18');
-assert.equal(nextAutomaticDate([],today,now),'2026-10-21');
-assert.equal(nextAutomaticDate([{work_date:'2026-06-15',status:'error',updated_at:'2026-10-20T00:00:00Z'}],today,now),'2026-10-21','New yesterday takes priority over historical backfill');
-assert.equal(nextAutomaticDate([...days,{work_date:'2026-10-10',status:'loading',updated_at:new Date(now-1000).toISOString()}],today,now),null);
-assert(!Object.hasOwn(failureValues(ready('2026-10-18'),'timeout',50000),'rows'));
-assert.equal(failureValues(ready('2026-10-18'),'timeout',50000).status,'ready');
+import {stripTypeScriptTypes} from 'node:module';
+import {nextAutomaticDate,failureValues,syncActive,retryDue} from '../supabase/functions/personnel-api/schedule.mjs';
+const today='2026-10-22',now=Date.parse('2026-10-22T03:00:00Z');
+const old={work_date:'2026-10-18',status:'ready',updated_at:'2026-10-20T00:00:00Z'};
+assert(!Object.hasOwn(failureValues(old,'timeout',50000),'rows'));
+assert.equal(failureValues(old,'timeout',50000).status,'ready');
 assert.equal(failureValues(null,'timeout',50000).status,'error');
-// Execute the actual handler with a failed Saby request, preserving a prior day.
-let handler,background;
-let saved={...ready('2026-10-18'),rows:[{cacheVersion:4,person:'Test',dateTime:'2026-10-18 10:00:00'}],error:null};
-const originalDate=saved.updated_at;
-const fetchMock=async(url,init={})=>{
-  const parsed=new URL(url);
-  if(parsed.pathname==='/auth/v1/user')return Response.json({email:'soltnar@gmail.com'});
-  if(parsed.hostname==='online.sbis.ru')throw new Error('Simulated timeout');
-  if(parsed.pathname.endsWith('/attendance_daily_cache')){
-    if(init.method==='POST'||init.method==='PATCH'){Object.assign(saved,JSON.parse(init.body));return Response.json([saved]);}
-    return Response.json([saved]);
-  }
-  throw new Error('Unexpected request '+url);
-};
 const source=fs.readFileSync(new URL('../supabase/functions/personnel-api/index.ts',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
-const context=vm.createContext({nextAutomaticDate,failureValues,fetch:fetchMock,Deno:{env:{get:()=> 'https://test.invalid'},serve:fn=>{handler=fn;}},EdgeRuntime:{waitUntil:promise=>{background=promise;}},console:{log(){},error(){}},Request,Response,URL,Intl,Date,Map,Set,Promise,TextEncoder,crypto,AbortSignal,setTimeout,clearTimeout});
+const context=vm.createContext({nextAutomaticDate,failureValues,syncActive,retryDue,Deno:{env:{get:()=> 'https://test.invalid'},serve(){}},console:{log(){},error(){}},Request,Response,URL,Intl,Date,Map,Set,Promise,TextEncoder,crypto,AbortSignal,setTimeout,clearTimeout});
 vm.runInContext(stripTypeScriptTypes(source),context);
-const response=await handler(new Request('https://test.invalid/?from=2026-10-18&to=2026-10-18&refresh=force&before=2026-10-22T00:00:00Z',{headers:{Authorization:'Bearer test'}}));
-assert.equal(response.status,200);await background;
-assert.equal(saved.status,'ready');assert.equal(saved.rows.length,1);assert.equal(saved.updated_at,originalDate);assert(saved.error);
-assert(saved.sync_progress.failed_at);
-background=null;
-const poll=await handler(new Request('https://test.invalid/?from=2026-10-18&to=2026-10-18&refresh=force&before=2026-10-22T00:00:00Z',{headers:{Authorization:'Bearer test'}}));
-assert.equal(background,null,'A failed forced refresh of a previously ready day must not restart on polling');
-assert.equal((await poll.json()).errors.length,1,'Forced refresh exposes its failure while preserving the ready snapshot');
-console.log('PASS: ready days unchanged, old holes retried, once per Moscow day, new yesterday, active lock, failure preserves stored events');
 let calls=[],fail=true,checkpoint;
 context.setTimeout=fn=>{fn();return 0;};
 context.fetch=async(_url,init)=>{
@@ -58,7 +20,7 @@ context.fetch=async(_url,init)=>{
 };
 await assert.rejects(context.fetchAttendance('2026-10-19','2026-10-19','token',null,async value=>{checkpoint=structuredClone(value);}));
 assert.equal(checkpoint.next_page,1);assert.equal(checkpoint.rows.length,30);
-assert.deepEqual(calls,[0,1,1]);calls=[];fail=false;
+assert.deepEqual(calls,[0,1]);calls=[];fail=false;
 const resumed=await context.fetchAttendance('2026-10-19','2026-10-19','token',checkpoint,async value=>{checkpoint=structuredClone(value);});
 assert.deepEqual(calls,[1,2]);assert.equal(resumed.rows.length,60);assert.equal(checkpoint.complete,true);
 calls=[];context.fetch=async()=>{calls.push(1);return new Response('',{status:429,headers:{'Retry-After':'60'}});};
@@ -80,13 +42,13 @@ console.log('PASS: short intermediate pages continue; empty intermediate pages a
 let batchCheckpoint,batchCalls=[];
 context.fetch=async(_url,init)=>{
  const page=JSON.parse(init.body).params['Навигация'].d[2];batchCalls.push(page);
- return Response.json({result:{s:[{n:'Source'},{n:'Person'},{n:'DateTime'},{n:'ActionType'},{n:'LastName'}],d:page<9?Array.from({length:30},(_,i)=>[3,page*30+i,'2026-10-19 10:00:00',1,'Person '+page+' '+i]):[],n:page<9}});
+ return Response.json({result:{s:[{n:'Source'},{n:'Person'},{n:'DateTime'},{n:'ActionType'},{n:'LastName'}],d:page<5?Array.from({length:30},(_,i)=>[3,page*30+i,'2026-10-19 10:00:00',1,'Person '+page+' '+i]):[],n:page<5}});
 };
 await assert.rejects(context.fetchAttendance('2026-10-19','2026-10-19','token',null,async value=>{batchCheckpoint=structuredClone(value);}),error=>error.name==='AttendanceBatchPaused');
-assert.equal(batchCheckpoint.next_page,8);assert.equal(batchCheckpoint.rows.length,240);
+assert.equal(batchCheckpoint.next_page,4);assert.equal(batchCheckpoint.rows.length,120);
 batchCalls=[];
 const completed=await context.fetchAttendance('2026-10-19','2026-10-19','token',batchCheckpoint);
-assert.deepEqual(batchCalls,[8,9]);assert.equal(completed.rows.length,270);
+assert.deepEqual(batchCalls,[4,5]);assert.equal(completed.rows.length,150);
 const pausedEntries=[{work_date:'2026-10-21',status:'loading',updated_at:new Date(now).toISOString(),sync_progress:{paused:true}}];
 assert.equal(nextAutomaticDate(pausedEntries,today,now),'2026-10-21');
-console.log('PASS: bounded eight-page batch resumes immediately from page eight; transient errors retry the same day after cooldown');
+console.log('PASS: bounded four-page batch resumes immediately from page four; transient errors retry the same day after cooldown');

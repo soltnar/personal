@@ -449,12 +449,16 @@ async function fetchSabyChunk(from, to, accessToken, syncBefore = "") {
       const message = response.status === 546
         ? "Saby не успел ответить (546)"
         : (payload.error || `HTTP ${response.status}`);
-      throw new Error(message);
+      const error=new Error(message);
+      error.retryable=response.status>=500||response.status===429;
+      throw error;
     }
     if (!Array.isArray(payload.rows)) throw new Error("Сервер вернул неизвестный формат данных");
     return payload;
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error(`сервер кэша не ответил за ${Math.round(SABY_API_TIMEOUT_MS / 1000)} секунд`);
+    if (error?.name === "AbortError" || error instanceof TypeError) {
+      const retry=new Error("Временная потеря связи с сервером. Повторяем проверку сохранённой очереди");retry.retryable=true;throw retry;
+    }
     throw error;
   } finally {
     clearTimeout(timeoutId);
@@ -508,29 +512,41 @@ async function loadSabyFromApi(options = {}) {
   loadSabyBtn.setAttribute("aria-busy", "true");
   let allRows = [];
   let employees = [];
+  let queueConfirmed=false,complete=false;
   const startedAt = Date.now();
 
   try {
     setSabyApiStatus('Запускаем обновление. Получение страниц Saby выполняется в фоне…','loading');
-    // The official employee directory is independent from attendance. Load it
-    // in parallel so a slow directory page cannot delay or break cache polling.
+    // A fixed cutoff identifies this refresh across all polling requests.
     const syncBefore = options.force === true ? new Date().toISOString() : "";
     while (Date.now() - startedAt < SABY_CACHE_WAIT_MS) {
-      const payload = await fetchSabyChunk(from, to, revenueDbSession.access_token, syncBefore);
+      let payload;
+      try{payload=await fetchSabyChunk(from,to,revenueDbSession.access_token,syncBefore);}
+      catch(error){
+        if(!error.retryable)throw error;
+        setSabyApiStatus(`${error.message}. ${queueConfirmed?'Загрузка продолжается на сервере.':''}`,"loading");
+        await new Promise(resolve=>setTimeout(resolve,SABY_CACHE_POLL_MS));continue;
+      }
+      queueConfirmed ||= !!payload.diagnostics?.persistentQueue;
       allRows = payload.rows;
       if (Array.isArray(payload.employees) && payload.employees.length) employees = payload.employees;
       const ready = payload.readyDates?.length || 0;
       const total = ready + (payload.pendingDates?.length || 0);
-      if (payload.complete) break;
+      if (payload.complete) {complete=true;break;}
       if(payload.errors?.length && !payload.diagnostics?.syncingDates?.length)throw new Error(payload.errors.map(item=>`${item.date}: ${item.error}`).join('; '));
       if (!syncBefore) throw new Error(`В базе отсутствуют или не готовы ${payload.pendingDates?.length || 0} дней: ${(payload.pendingDates || []).join(", ")}. Запустите синхронизацию в настройках`);
       const currentDate = payload.diagnostics?.syncingDate || payload.pendingDates?.[0] || "следующая дата";
       const progress=payload.diagnostics?.progressPage ? ` Сохранено страниц: ${payload.diagnostics.progressPage}, исходных событий: ${payload.diagnostics.progressRows}.` : '';
-      setSabyApiStatus(`Кэшируем проходную: готово ${ready} из ${total} дней. Сейчас загружается ${currentDate}.${progress}`, "loading");
+      const retry=payload.diagnostics?.retryAfter?` Saby временно не отвечает; повтор после ${new Date(payload.diagnostics.retryAfter).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow'})} МСК.`:'';
+      setSabyApiStatus(`Обновление проходной: готово ${ready} из ${total} дней. Сейчас ${currentDate}.${progress}${retry} Можно закрыть приложение — очередь сохранена.`, "loading");
       await new Promise((resolve) => setTimeout(resolve, SABY_CACHE_POLL_MS));
     }
 
-    if (Date.now() - startedAt >= SABY_CACHE_WAIT_MS) throw new Error("Синхронизация ещё не завершена. Готовые дни сохранены в базе");
+    if(!complete){
+      if(!queueConfirmed)throw new Error("Не удалось подтвердить постановку обновления в очередь. Проверьте соединение и повторите");
+      setSabyApiStatus("Обновление продолжается в фоне. Готовые дни и прогресс сохранены. Позже загрузите отчёт из базы или нажмите обновление, чтобы проверить оставшиеся дни.","loading");
+      return;
+    }
 
     const prepared = prepareSabyData(allRows, from, to, employees);
     if (!prepared.attendance.length) throw new Error("За выбранный период не найдено событий проходной по учитываемым должностям");
