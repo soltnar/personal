@@ -26,10 +26,10 @@ export function nextAutomaticDate(entries, today, now = Date.now()) {
     return date;
   }
   // Devices may upload yesterday's exits hours or days after their entries.
-  // Re-read complete recent days from page zero, at most once per six hours.
+  // Re-read complete recent days from page zero, at most once per Moscow calendar day.
   for(let i=1;i<=3;i++){
     const date=add(today,-i),entry=byDate.get(date);
-    if(entry?.status==='ready'&&!entry.sync_progress?.requested_at&&retryDue(entry,now)&&now-Date.parse(entry.updated_at)>=6*3600000)return date;
+    if(entry?.status==='ready'&&!entry.sync_progress?.requested_at&&retryDue(entry,now)&&new Date(Date.parse(entry.updated_at)+3*3600000).toISOString().slice(0,10)<today)return date;
   }
   return null;
 }

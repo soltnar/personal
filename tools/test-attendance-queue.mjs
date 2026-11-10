@@ -87,9 +87,15 @@ console.log('PASS: durable multi-day queue, ready snapshot preserved on timeout,
 const recent=day=>({work_date:day,status:'ready',updated_at:new Clock().toISOString()});
 const today='2026-11-09';
 assert.equal(nextAutomaticDate([recent('2026-11-08'),recent('2026-11-07'),recent('2026-11-06')],today,now),null);
-const old={...recent('2026-11-07'),updated_at:new Clock(now-7*3600000).toISOString()};
+const earlierToday={...recent('2026-11-07'),updated_at:new Clock(now-7*3600000).toISOString()};
+assert.equal(nextAutomaticDate([recent('2026-11-08'),earlierToday,recent('2026-11-06')],today,now),null,'A day already loaded this Moscow day is not reread after six hours');
+const old={...recent('2026-11-07'),updated_at:'2026-11-08T20:59:59Z'};
 assert.equal(nextAutomaticDate([recent('2026-11-08'),old,recent('2026-11-06')],today,now),'2026-11-07');
 assert.equal(nextAutomaticDate([recent('2026-11-08'),{...old,sync_progress:{requested_at:before,paused:true}}],today,now),'2026-11-07');
 assert.equal(syncActive({status:'ready',sync_progress:{lease_at:new Clock().toISOString(),paused:false}},now),true);
 assert.equal(syncActive({status:'ready',sync_progress:{lease_at:new Clock(now-121000).toISOString(),paused:false}},now),false);
 console.log('PASS: automatic reread of recent complete days, manual queue priority, ready-snapshot leases expire safely');
+
+const afterMidnight={...recent('2026-11-07'),updated_at:'2026-11-08T21:00:01Z'};
+assert.equal(nextAutomaticDate([recent('2026-11-08'),afterMidnight,recent('2026-11-06')],today,now),null,'Moscow midnight is UTC 21:00');
+console.log('PASS: complete recent days reread once per Moscow day; six-hour and UTC-midnight repeats excluded');
