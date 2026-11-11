@@ -129,3 +129,10 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 }
 
 .excludedAttendance{margin-top:24px;border-top:1px solid var(--border);padding-top:16px}.excludedAttendance>summary{cursor:pointer;font-weight:600;color:var(--muted);font-size:13px}.excludedAttendance .gapList{margin-top:12px}
+
+.staffDay .staffDayHeading{display:flex;flex-wrap:wrap;align-items:center;gap:4px 9px}
+.staffDay .staffDayHeading small{margin-left:0}
+.calendarDayBadge{display:inline-block;border-radius:5px;padding:2px 6px;font-size:11px;line-height:1.4;font-weight:600;background:#edf1f3;color:#465769}
+.calendarDayBadge--weekend{background:#e7f2ee;color:#245a48}
+.calendarDayBadge--holiday{background:#fff0d4;color:#734d12}
+.detailDayControl select{min-width:0}

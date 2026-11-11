@@ -24,3 +24,19 @@ assert.equal(context.deliveryRowVisible({delivery:0,deliveryOrders:0,deliveryRev
 assert.equal(context.deliveryRowVisible({delivery:3,deliveryOrders:null,deliveryRevenue:null}),true);
 assert.equal(context.deliveryRowVisible({delivery:0,deliveryOrders:2,deliveryRevenue:100}),true);
 console.log('PASS: empty delivery venues hidden; staff with missing data and orders without shifts remain visible');
+vm.runInContext(source.slice(source.indexOf('// Federal calendar'),source.indexOf('function renderRoleDetail()')),context);
+for(const [date,label,weekday] of [
+  ['2026-11-01','Выходной','воскресенье'],
+  ['2026-11-04','Праздник','среда'],
+  ['2026-11-05','','четверг'],
+  ['2026-05-09','Праздник','суббота'],
+  ['2026-05-11','Выходной','понедельник'],
+  ['2026-12-31','Выходной','четверг'],
+  ['2027-02-20','Рабочий день','суббота'],
+  ['2027-02-22','Выходной','понедельник']
+]){
+  const day=context.reportCalendarDay(date);
+  assert.equal(day.label,label,date);
+  assert.equal(day.weekday,weekday,date);
+}
+console.log('PASS: weekend and holiday badges, transferred days off and working Saturdays');

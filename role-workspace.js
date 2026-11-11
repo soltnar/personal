@@ -100,6 +100,38 @@ function detailMetrics(row,role){
   const field=roleRevenue[role],revenue=row[field],sample=row.coverage?.[role]||productivitySample(row,role);
   return `<div class="detailStats"><div><strong>${formatShift(row[role])}</strong><span>Смены</span></div><div><strong>${Number.isFinite(revenue)?formatMoney(revenue)+' ₽':'—'}</strong><span>${role==='kitchen'?(row.kitchenRevenueSource==='unified'?'Выручка единого склада':'Выручка кухни'):role==='bar'?'Выручка бара':role==='delivery'?'Сумма заказов доставки':role==='operators'?'Сумма заказов сети с самовывозом':role==='hall'?'Выручка без доставки':'Общая выручка'}</span></div><div><strong>${formatProductivity(row,role)}</strong><span>₽/смену</span></div></div>${['delivery','operators'].includes(role)?deliveryMetrics(row,false,role):''}${sample.missing?`<p class="coverageWarning">Выработка не учитывает ${sample.missing} предприятие-дней без выручки (${formatShift(sample.missingShifts)} смен).</p>`:''}`;
 }
+// Federal calendar for a five-day week. Annual transfers follow decrees
+// 1335 (2025), 1466 (2026), and 1187 (2027), plus holiday/weekend overlaps.
+const transferredDaysOff = new Set([
+  '2025-05-02','2025-05-08','2025-06-13','2025-11-03','2025-12-31',
+  '2026-01-09','2026-03-09','2026-05-11','2026-12-31',
+  '2027-02-22','2027-05-03','2027-05-10','2027-06-14','2027-11-05','2027-12-31'
+]);
+const workingWeekends = new Set(['2025-11-01','2027-02-20']);
+const federalHolidays = {
+  '01-07':'Рождество Христово',
+  '02-23':'День защитника Отечества',
+  '03-08':'Международный женский день',
+  '05-01':'Праздник Весны и Труда',
+  '05-09':'День Победы',
+  '06-12':'День России',
+  '11-04':'День народного единства'
+};
+const weekdayNames = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+
+function reportCalendarDay(iso) {
+  const weekday = new Date(iso + 'T00:00:00Z').getUTCDay();
+  const monthDay = iso.slice(5);
+  const holiday = federalHolidays[monthDay] || (/^01-0[1-8]$/.test(monthDay) ? 'Новогодние каникулы' : '');
+  const weekend = !workingWeekends.has(iso) && (weekday === 0 || weekday === 6 || transferredDaysOff.has(iso));
+  return {
+    weekday: weekdayNames[weekday],
+    label: holiday ? 'Праздник' : weekend ? 'Выходной' : workingWeekends.has(iso) ? 'Рабочий день' : '',
+    kind: holiday ? 'holiday' : weekend ? 'weekend' : 'workday',
+    holiday
+  };
+}
+
 function renderRoleDetail(){
   if(!detailState)return;
   const {row,role,day}=detailState,days=(row.dailyRows||[row]).slice().sort((a,b)=>a.dateIso.localeCompare(b.dateIso));
@@ -111,11 +143,13 @@ function renderRoleDetail(){
   if(!role){const empty=document.createElement('p');empty.textContent='Выберите доступный раздел в фильтрах.';body.append(empty);return;}
   const control=document.createElement('label');control.className='detailDayControl';control.textContent='День';const select=document.createElement('select');
   if(days.length>1){const option=document.createElement('option');option.value='';option.textContent='Весь период по дням';select.append(option);}
-  for(const entry of days){const option=document.createElement('option');option.value=entry.dateIso;option.textContent=prettyDate(entry.dateIso);select.append(option);}select.value=day|| (days.length===1?days[0].dateIso:'');select.onchange=()=>{detailState.day=select.value;renderRoleDetail();};control.append(select);body.append(control);
+  for(const entry of days){const option=document.createElement('option');option.value=entry.dateIso;const calendar=reportCalendarDay(entry.dateIso);option.textContent=[prettyDate(entry.dateIso),calendar.weekday,calendar.label].filter(Boolean).join(" · ");select.append(option);}select.value=day|| (days.length===1?days[0].dateIso:'');select.onchange=()=>{detailState.day=select.value;renderRoleDetail();};control.append(select);body.append(control);
   const summary=document.createElement('div');summary.innerHTML=detailMetrics(day?days.find(entry=>entry.dateIso===day)||row:row,role);body.append(summary);
   for(const entry of days.filter(entry=>!day||entry.dateIso===day)){
     const section=document.createElement('section');section.className='staffDay';
-    section.innerHTML=`<h3>${prettyDate(entry.dateIso)} <small>${formatShift(entry[role])} смен</small></h3>${days.length>1&&!day?detailMetrics(entry,role):''}`;
+    const calendar=reportCalendarDay(entry.dateIso);
+    const badge=calendar.label ? `<span class="calendarDayBadge calendarDayBadge--${calendar.kind}"${calendar.holiday ? ` title="${escapeHtml(calendar.holiday)}"` : ''}>${calendar.label}</span>` : '';
+    section.innerHTML=`<h3 class="staffDayHeading">${prettyDate(entry.dateIso)} <small>${calendar.weekday}</small>${badge}<small>${formatShift(entry[role])} смен</small></h3>${days.length>1&&!day?detailMetrics(entry,role):''}`;
     const people=entry.details?.[role]||[];
     if(!people.length){const p=document.createElement('p');p.className='hint';p.textContent='Нет сотрудников в выбранном разделе.';section.append(p);}
     else{const list=document.createElement('ul');list.className='staffList';for(const person of people){const item=document.createElement('li');item.classList.toggle('needsReview',!!person.hasConflict);item.innerHTML=`<span><strong>${escapeHtml(person.person)}</strong><small class="staffPosition">${escapeHtml(person.position||'Должность не указана')}</small>${person.hasConflict?`<small>${escapeHtml(person.reviewReason||'Требует проверки')}</small>`:''}</span><span>${formatShift(person.shift)} смен.</span>`;list.append(item);}section.append(list);}
