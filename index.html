@@ -12,7 +12,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="personnel-icon-32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="personnel-icon-180.png" />
   <link rel="stylesheet" href="styles.css?v=5.0.29" />
-  <link rel="stylesheet" href="role-workspace.css?v=5.0.29" />
+  <link rel="stylesheet" href="role-workspace.css?v=5.0.33" />
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0/dist/umd/supabase.js"></script>
 </head>
@@ -189,14 +189,23 @@
       <div id="overviewEmpty" class="workspaceEmpty"><span aria-hidden="true">◫</span><h3>Начнём с отчёта</h3><p>Выберите период выше и откройте отчёт из базы.<br>Здесь появятся показатели доступных вам предприятий.</p></div>
       <div class="overviewLinks"><a href="#enterprises">Смотреть по предприятиям <span aria-hidden="true">→</span></a><a href="#quality">Проверить полноту данных <span aria-hidden="true">→</span></a></div>
     </section>
-    <section class="panel" data-pages="payroll" hidden>
-      <label>Месяц <input id="payrollMonth" type="month" min="2000-01" max="2099-12" required></label>
-      <form id="payrollImport" hidden>
-        <label>Расчётная ведомость СБИС <input id="payrollFile" type="file" accept=".xlsx" required></label>
-        <button type="submit" class="secondaryBtn">Загрузить или заменить ведомость месяца</button>
-      </form>
+    <section class="panel resultsPanel payrollPanel" data-pages="payroll" hidden>
+      <div class="payrollToolbar">
+        <label>Месяц <input id="payrollMonth" type="month" min="2000-01" max="2099-12" required></label>
+        <details id="payrollUpload" hidden>
+          <summary>Импорт ведомости</summary>
+          <form id="payrollImport">
+            <label>Расчётная ведомость СБИС <input id="payrollFile" type="file" accept=".xlsx" required></label>
+            <button type="submit" class="secondaryBtn">Загрузить ведомость месяца</button>
+          </form>
+        </details>
+      </div>
       <p id="payrollStatus" role="status"></p>
-      <p class="hint">Начисления за месяц и смены по его половинам. Прочерк означает, что данных для показателя недостаточно.</p>
+      <nav id="payrollTabs" class="roleTabs" aria-label="Категория ФОТ" hidden></nav>
+      <div id="payrollHeading" class="roleHeading" hidden>
+        <h2 id="payrollCategoryTitle">Все категории</h2>
+        <label class="siteSearch"><i data-feather="search" aria-hidden="true"></i><input id="payrollSearch" type="search" placeholder="Найти предприятие…" aria-label="Найти предприятие по ФОТ"></label>
+      </div>
       <div id="payrollResults"></div>
     </section>
     <section class="panel qualityPanel" data-pages="quality" hidden><div class="resultsHeading"><div><p class="eyebrow">ПОЛНОТА И КАЧЕСТВО</p><h2 class="panelTitle">Что требует внимания</h2></div><span id="qualityScope" class="hint">По текущим фильтрам</span></div><p class="hint">Пропуски выручки и неоднозначные отметки сотрудников — разные причины. Здесь они показаны отдельно с переходом к нужному дню.</p><details id="reportGaps" class="reportGaps" open><summary>Пропуски выручки</summary><p class="hint">Сначала откройте отчёт за нужный период.</p></details><div id="attendanceReviews"></div></section>
@@ -224,7 +233,7 @@
   <script src="script.js?v=5.0.29"></script>
   <script src="report-ui.js?v=5.0.30"></script>
   <script src="saby-login.js?v=5.0.29"></script>
-  <script src="payroll-ui.js?v=5.0.32"></script>
+  <script src="payroll-ui.js?v=5.0.33"></script>
   <script src="workspace.js?v=5.0.30"></script>
   <script src="access-ui.js?v=5.0.29"></script>
   <script src="telegram-ui.js?v=5.0.29"></script>

@@ -2,20 +2,29 @@ const payrollMonth = document.getElementById('payrollMonth');
 const payrollResults = document.getElementById('payrollResults');
 const payrollStatus = document.getElementById('payrollStatus');
 const payrollImport = document.getElementById('payrollImport');
+const payrollUpload = document.getElementById('payrollUpload');
+const payrollTabs = document.getElementById('payrollTabs');
+const payrollHeading = document.getElementById('payrollHeading');
+const payrollSearch = document.getElementById('payrollSearch');
 const payrollNav = document.getElementById('payrollNav');
 const payrollCategories = {kitchen:'Кухня',hall:'Зал',bar:'Бар',delivery:'Доставка',operators:'Операторы',other:'Прочие должности'};
 const payrollMoney = new Intl.NumberFormat('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
 let payrollAccess = null;
 let payrollGeneration = 0;
 let payrollAccessRequest = 0;
+let payrollRows = [];
+let payrollCategory = 'all';
 
 function clearPayroll() {
   payrollGeneration++;
   payrollAccessRequest++;
   payrollAccess = null;
-  payrollResults.replaceChildren();
+  clearPayrollResults();
   payrollStatus.textContent = '';
-  payrollImport.hidden = true;
+  payrollUpload.hidden = true;
+  payrollUpload.open = false;
+  payrollSearch.value = '';
+  payrollCategory = 'all';
   payrollNav.hidden = true;
   document.getElementById('payrollFile').value = '';
 }
@@ -91,64 +100,174 @@ function payrollTable(parent, titles) {
   return table.createTBody();
 }
 
-function renderPayroll(groups) {
-  payrollResults.replaceChildren();
-  const fmt = (value) => value == null ? '—' : payrollMoney.format(value);
-  const total = groups.reduce((sum, group) => sum + group.accrual, 0);
-  payrollElement(payrollResults, 'h3', `Начислено: ${fmt(total / 100)} ₽`);
-  const summary = payrollTable(payrollResults, ['Подразделение','Начислено, ₽','Смены за месяц','Смены 1–15','Смены с 16','ФОТ / смену, ₽','ФОТ / выручку','Дни с выручкой']);
-  for (const group of groups) {
-    const row = summary.insertRow();
-    [group.name, fmt(group.accrual / 100), group.shifts ?? '—', group.firstHalf ?? '—', group.secondHalf ?? '—',
-      fmt(group.shifts ? group.accrual / 100 / group.shifts : null),
-      group.revenue > 0 ? fmt(group.accrual / group.revenue) + ' %' : '—', group.revenueDays]
-      .forEach(value => payrollElement(row, 'td', value));
-  }
-  const categories = Object.entries(payrollCategories);
-  payrollElement(payrollResults, 'h3', 'ФОТ по категориям');
-  const categoryTable = payrollTable(payrollResults, ['Подразделение', ...categories.map(([,label]) => label), 'Не распределено', 'Всего']);
-  const addCategoryRow = (label, items) => {
-    const row = categoryTable.insertRow();
-    payrollElement(row, 'th', label).scope = 'row';
-    const amounts = [
-      ...categories.map(([key]) => items.reduce((sum, group) => sum + (group.categoryTotals?.[key] ?? (key === 'other' ? group.accrual - group.unallocated : 0)), 0)),
-      items.reduce((sum, group) => sum + group.unallocated, 0),
-      items.reduce((sum, group) => sum + group.accrual, 0)
-    ];
-    amounts.forEach(amount => payrollElement(row, 'td', fmt(amount / 100)));
-  };
-  addCategoryRow('Итого', groups);
-  for (const group of groups) addCategoryRow(group.name, [group]);
+const payrollNumber = new Intl.NumberFormat('ru-RU', {maximumFractionDigits:1});
+const payrollRubles = (value) => value == null ? '—' : payrollMoney.format(value) + ' ₽';
+const payrollShifts = (value) => value == null ? '—' : payrollNumber.format(value);
 
-  for (const group of groups) {
-    const details = payrollElement(payrollResults, 'details', '');
-    payrollElement(details, 'summary', `${group.name} · ${group.employees.length} сотрудников`);
-    if (group.unallocated) payrollElement(details, 'p', `Разница с итогом подразделения: ${fmt(group.unallocated / 100)} ₽`);
-    const employees = payrollTable(details, ['Сотрудник','Должность','Категория','Начислено, ₽','Смены 1–15','Смены с 16','Начислено / смену, ₽','Карточка']);
-    const categoryOrder = Object.keys(payrollCategories);
-    const people = [...group.employees].sort((a,b) =>
-      categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category) || a.name.localeCompare(b.name,'ru'));
-    for (const person of people) {
-      const row = employees.insertRow();
-      const ratio = person.comparable ? person.accrual / 100 / (person.firstHalf + person.secondHalf) : null;
-      [person.name, person.position || '—', payrollCategories[person.category] || payrollCategories.other, fmt(person.accrual / 100), person.firstHalf ?? '—', person.secondHalf ?? '—', fmt(ratio)]
-        .forEach(value => payrollElement(row, 'td', value));
-      const cell = payrollElement(row, 'td', '');
-      if (person.link) {
-        const link = payrollElement(cell, 'a', 'Открыть в СБИС');
-        link.href = person.link;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
+function clearPayrollResults() {
+  payrollRows = [];
+  payrollResults.replaceChildren();
+  payrollTabs.hidden = true;
+  payrollHeading.hidden = true;
+}
+
+function payrollCoverage(group) {
+  if (group.revenueDays === 0) return 'Выручка не найдена';
+  if (group.expectedDays && group.revenueDays < group.expectedDays) {
+    const month = Number(payrollMonth.value.slice(5));
+    const dates = group.missingRevenueDays.map(day => `${String(day).padStart(2,'0')}.${String(month).padStart(2,'0')}`);
+    return `Выручка за ${group.revenueDays} из ${group.expectedDays} дней. Нет данных: ${dates.join(', ')}.`;
+  }
+  if (!((group.observedRevenue ?? group.revenue) > 0)) return 'Выручка равна нулю';
+  return '';
+}
+
+function fillPayrollDetails(container, group, people, category) {
+  const notes = [];
+  if (category === 'all') {
+    notes.push(`Смены за 1–15: ${payrollShifts(group.firstHalf)} · с 16 числа: ${payrollShifts(group.secondHalf)}`);
+    if (group.unallocated) notes.push(`Не распределено по сотрудникам: ${payrollRubles(group.unallocated / 100)}`);
+  }
+  const coverage = payrollCoverage(group);
+  if (coverage) notes.push(coverage);
+  if (group.observedRevenue != null) {
+    notes.push(`${coverage ? 'Выручка за дни с данными' : 'Выручка за месяц'}: ${payrollRubles(group.observedRevenue)}`);
+  }
+  if (category === 'all' && group.categoryTotals) {
+    const roles = Object.entries(payrollCategories).filter(([key]) => group.categoryTotals[key]);
+    if (roles.length) {
+      const breakdown = payrollElement(container,'div','');
+      breakdown.className = 'payrollBreakdown';
+      for (const [key,label] of roles) {
+        const item = payrollElement(breakdown,'span','');
+        payrollElement(item,'small',label);
+        payrollElement(item,'strong',payrollRubles(group.categoryTotals[key] / 100));
       }
+    }
+  }
+  for (const note of notes) payrollElement(container,'p',note).className = 'hint';
+  if (!people.length) {
+    payrollElement(container,'p','В ведомости нет сотрудников этой категории.').className = 'hint';
+    return;
+  }
+  const employees = payrollTable(container, ['Сотрудник','Должность','Категория','Начислено','Смены 1–15','Смены с 16','Начислено / смену','']);
+  const categoryOrder = Object.keys(payrollCategories);
+  for (const person of [...people].sort((a,b) => categoryOrder.indexOf(a.category)-categoryOrder.indexOf(b.category) || a.name.localeCompare(b.name,'ru'))) {
+    const row = employees.insertRow();
+    const ratio = person.comparable ? person.accrual / 100 / (person.firstHalf + person.secondHalf) : null;
+    [person.name,person.position || '—',payrollCategories[person.category] || payrollCategories.other,payrollRubles(person.accrual / 100),
+      payrollShifts(person.firstHalf),payrollShifts(person.secondHalf),payrollRubles(ratio)]
+      .forEach(value => payrollElement(row,'td',value));
+    const cell = payrollElement(row,'td','');
+    if (person.link) {
+      const link = payrollElement(cell,'a','В СБИС');
+      link.href = person.link;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
     }
   }
 }
 
+function renderPayrollRows() {
+  payrollResults.replaceChildren();
+  const category = payrollCategory;
+  const all = category === 'all';
+  document.getElementById('payrollCategoryTitle').textContent = all ? 'Все категории' : payrollCategories[category];
+  const search = payrollSearch.value.trim().toLocaleLowerCase('ru').replace(/ё/g,'е');
+  const rows = payrollRows.filter(group => group.name.toLocaleLowerCase('ru').replace(/ё/g,'е').includes(search))
+    .map(group => ({
+      group,
+      accrual:all ? group.accrual : group.categoryTotals?.[category] ?? 0,
+      shifts:all ? group.shifts : group.categoryShifts?.[category] ?? null,
+      people:all ? group.employees : group.employees.filter(person => person.category === category),
+    })).filter(row => all || row.people.length || row.shifts > 0);
+  if (!rows.length) {
+    payrollElement(payrollResults,'p',search ? 'Предприятия не найдены.' : 'За этот месяц нет данных по категории.').className = 'hint';
+    return;
+  }
+
+  const totals = payrollElement(payrollResults,'div','');
+  totals.className = 'roleTotals payrollTotals';
+  const shiftRows = rows.filter(row => row.shifts != null);
+  const shiftTotal = shiftRows.reduce((sum,row) => sum + row.shifts,0);
+  const revenueFor = (group) => group.observedRevenue ?? group.revenue;
+  const comparable = rows.filter(row => revenueFor(row.group) > 0);
+  const revenueTotal = comparable.reduce((sum,row) => sum + revenueFor(row.group),0);
+  const accrualTotal = rows.reduce((sum,row) => sum + row.accrual,0);
+  const percent = (amount,revenue) => revenue > 0 ? payrollMoney.format(amount / revenue) + ' %' : '—';
+  for (const [label,value] of [
+    ['Начислено',payrollRubles(accrualTotal / 100)],
+    [shiftRows.length < rows.length ? 'Смены по точкам с данными' : 'Учтённые смены',payrollShifts(shiftRows.length ? shiftTotal : null)],
+    [all ? 'ФОТ / выручка · по точкам с выручкой' : 'ФОТ категории / выручка её точек',percent(comparable.reduce((sum,row) => sum + row.accrual,0),revenueTotal)]
+  ]) {
+    const item = payrollElement(totals,'div','');
+    payrollElement(item,'strong',value);
+    payrollElement(item,'span',label);
+  }
+  const body = payrollTable(payrollResults,['Предприятие','Начислено','Смены','ФОТ / смену','Выручка точки','ФОТ / выручка']);
+  body.closest('table').className = 'payrollSites';
+  for (const {group,accrual,shifts,people} of rows) {
+    const row = body.insertRow();
+    const name = payrollElement(row,'td','');
+    const button = payrollElement(name,'button','');
+    button.className = 'siteOpen';
+    button.type = 'button';
+    button.setAttribute('aria-expanded','false');
+    payrollElement(button,'strong',group.name);
+    const coverage = payrollCoverage(group);
+    if (coverage && group.revenueDays > 0) {
+      const warning = payrollElement(button,'span','!');
+      warning.className = 'qualityDot';
+      warning.title = coverage;
+      warning.setAttribute('aria-label',coverage);
+    }
+    payrollElement(button,'small',`${payrollRubles(accrual / 100)} · ${payrollShifts(shifts)} смен`);
+    const ratio = shifts > 0 ? accrual / 100 / shifts : null;
+    [payrollRubles(accrual / 100),payrollShifts(shifts),payrollRubles(ratio)]
+      .forEach(value => payrollElement(row,'td',value));
+    const revenueCell = payrollElement(row,'td',payrollRubles(revenueFor(group)));
+    if (group.revenueDays > 0 && group.expectedDays && group.revenueDays < group.expectedDays) {
+      payrollElement(revenueCell,'small',`${group.revenueDays} из ${group.expectedDays} дней`).className = 'payrollCoverage';
+    }
+    const percentCell = payrollElement(row,'td',percent(accrual,revenueFor(group)));
+    if (group.revenue == null && group.revenueDays > 0 && group.expectedDays) {
+      payrollElement(percentCell,'small',`Выручка за ${group.revenueDays} из ${group.expectedDays} дней`).className = 'payrollCoverage';
+    }
+    const disclosure = body.insertRow();
+    disclosure.hidden = true;
+    disclosure.className = 'payrollDisclosure';
+    const cell = disclosure.insertCell();
+    cell.colSpan = 6;
+    button.onclick = () => {
+      disclosure.hidden = !disclosure.hidden;
+      button.setAttribute('aria-expanded',String(!disclosure.hidden));
+      if (!disclosure.hidden && !cell.hasChildNodes()) fillPayrollDetails(cell,group,people,category);
+    };
+  }
+}
+
+function renderPayroll(groups) {
+  payrollRows = groups;
+  payrollTabs.replaceChildren();
+  payrollTabs.hidden = false;
+  payrollHeading.hidden = false;
+  for (const [key,label] of [['all','Все'],...Object.entries(payrollCategories)]) {
+    const tab = payrollElement(payrollTabs,'button',label);
+    tab.type = 'button';
+    tab.setAttribute('aria-pressed',String(key===payrollCategory));
+    tab.onclick = () => {
+      payrollCategory = key;
+      for (const button of payrollTabs.children) button.setAttribute('aria-pressed',String(button===tab));
+      renderPayrollRows();
+    };
+  }
+  renderPayrollRows();
+}
 async function loadPayroll() {
   const generation = ++payrollGeneration;
-  payrollResults.replaceChildren();
+  clearPayrollResults();
   if (!payrollAccess) return;
-  payrollImport.hidden = !payrollAccess.canImport;
+  payrollUpload.hidden = !payrollAccess.canImport;
   payrollStatus.textContent = 'Загружаем ФОТ…';
   try {
     const result = await reportRequest(`?resource=payroll&month=${encodeURIComponent(payrollMonth.value)}`);
@@ -170,6 +289,7 @@ const payrollCurrentMonth = new Date().toLocaleDateString('sv-SE', {timeZone:'Eu
 const [payrollYear, payrollMonthNumber] = payrollCurrentMonth.split('-').map(Number);
 payrollMonth.value = new Date(Date.UTC(payrollYear, payrollMonthNumber - 2, 1)).toISOString().slice(0, 7);
 payrollMonth.addEventListener('change', loadPayroll);
+payrollSearch.addEventListener('input', renderPayrollRows);
 payrollImport.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!payrollAccess?.canImport) return;

@@ -1,4 +1,4 @@
-import { canonicalRestaurantName, staffRoleKey, summarizeAttendance } from './engine.mjs';
+import { canonicalRestaurantName, roleKeys, staffRoleKey, summarizeAttendance } from './engine.mjs';
 
 const nameKey = (value) => String(value ?? '').normalize('NFKC').toLowerCase().replace(/ё/g, 'е').trim().replace(/\s+/g, ' ');
 const validAmount = (value) => Number.isSafeInteger(value) && Math.abs(value) <= 100_000_000_000;
@@ -103,7 +103,14 @@ export function buildPayroll(sourceGroups, days, sales, scope, expectedDays) {
     const shifts = canCount ? rows.reduce((sum, row) => sum + row.total, 0) : null;
     const firstHalf = canCount ? rows.filter(row => Number(row.dateIso.slice(-2)) <= 15).reduce((sum, row) => sum + row.total, 0) : null;
     const salesRows = rows.filter(row => Number.isFinite(row.revenue));
-    const revenue = salesRows.length === expectedDays ? salesRows.reduce((sum, row) => sum + row.revenue, 0) : null;
+    const observedRevenue = salesRows.length ? salesRows.reduce((sum, row) => sum + row.revenue, 0) : null;
+    const revenue = salesRows.length === expectedDays ? observedRevenue : null;
+    const knownRevenueDays = new Set(salesRows.map(row => Number(row.dateIso.slice(-2))));
+    const missingRevenueDays = Array.from({length:expectedDays}, (_, index) => index + 1)
+      .filter(day => !knownRevenueDays.has(day));
+    const categoryShifts = Object.fromEntries(roleKeys.map(role => [
+      role, canCount ? rows.reduce((sum, row) => sum + row[role], 0) : null,
+    ]));
     const categoryTotals = {kitchen:0,hall:0,bar:0,delivery:0,operators:0,other:0};
     const employees = group.employees.map(({id, name, position = '', accrual, link}) => {
       const category = staffRoleKey(position, point) || 'other';
@@ -116,9 +123,9 @@ export function buildPayroll(sourceGroups, days, sales, scope, expectedDays) {
       return {id, name, position, category, accrual, link, firstHalf, secondHalf, comparable:local.length > 0 && records.length === local.length};
     });
     return {
-      name:group.name, accrual:group.accrual, shifts, firstHalf, secondHalf:canCount ? shifts - firstHalf : null, revenue, revenueDays:salesRows.length,
+      name:group.name, accrual:group.accrual, shifts, firstHalf, secondHalf:canCount ? shifts - firstHalf : null, revenue, observedRevenue, revenueDays:salesRows.length,
       unallocated:group.accrual - Object.values(categoryTotals).reduce((sum, value) => sum + value, 0),
-      categoryTotals, employees,
+      categoryTotals, categoryShifts, missingRevenueDays, expectedDays, employees,
     };
   });
 }

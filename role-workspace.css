@@ -136,3 +136,50 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 .calendarDayBadge--weekend{background:#e7f2ee;color:#245a48}
 .calendarDayBadge--holiday{background:#fff0d4;color:#734d12}
 .detailDayControl select{min-width:0}
+
+.payrollToolbar{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+.payrollToolbar>label{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600}
+.payrollToolbar input[type=month]{font:inherit;border:1px solid var(--border);border-radius:8px;padding:8px;background:white;color:var(--text)}
+.payrollToolbar details summary{cursor:pointer;color:var(--muted);padding:7px 0;font-size:13px}
+.payrollToolbar form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:8px 0}
+.payrollToolbar form label{display:grid;gap:5px;font-size:12px}
+.payrollPanel [hidden]{display:none!important}
+.payrollTotals{flex-wrap:wrap}
+.payrollPanel table.payrollSites{min-width:0;table-layout:fixed}
+.payrollSites>thead th:first-child{width:30%}
+.payrollSites>thead th:nth-child(3){width:8%}
+.payrollSites>thead th:last-child{width:16%}
+.payrollSites .siteOpen strong::before{content:'›';display:inline-block;width:14px;color:var(--muted)}
+.payrollSites .siteOpen[aria-expanded=true] strong::before{transform:rotate(90deg)}
+.payrollSites .siteOpen small{display:none}
+.payrollSites .payrollDisclosure td{padding:12px;background:#f5f7f8}
+.payrollPanel .tableWrap{max-width:100%;overflow:auto!important}
+.payrollPanel th,.payrollPanel td{white-space:nowrap}
+.payrollPanel td:first-child,.payrollPanel th:first-child{white-space:normal}
+@media(max-width:600px){
+  .payrollTotals>div{min-width:125px;flex:0 0 auto}
+  .payrollTotals strong{font-size:18px}
+  .payrollSites .siteOpen small{display:block}
+}
+.payrollCoverage{display:block;color:var(--muted);font-size:11px;margin-top:4px}
+@media(max-width:700px){
+  .payrollPanel table{display:table!important}
+  .payrollPanel thead{display:table-header-group!important}
+  .payrollPanel tbody{display:table-row-group!important}
+  .payrollPanel tr:not([hidden]){display:table-row!important}
+  .payrollPanel td,.payrollPanel th{display:table-cell!important}
+  .payrollPanel td::before{display:none!important}
+}
+@media(max-width:600px){
+  .payrollSites>thead th:first-child{width:64%}
+  .payrollSites>thead th:last-child{width:36%}
+  .payrollSites>thead>tr>th:nth-child(n+2):nth-child(-n+5),
+  .payrollSites>tbody>tr:not(.payrollDisclosure)>td:nth-child(n+2):nth-child(-n+5){display:none!important}
+}
+.payrollBreakdown{display:flex;gap:8px 18px;flex-wrap:wrap;margin-bottom:12px}
+.payrollBreakdown small,.payrollBreakdown strong{display:block}
+.payrollBreakdown small{color:var(--muted);margin-bottom:3px;font-size:11px}
+.payrollBreakdown strong{font-size:13px}
+@media(max-width:600px){
+  .payrollSites>tbody>tr:not(.payrollDisclosure)>td:last-child{white-space:normal;overflow-wrap:anywhere}
+}
