@@ -1,4 +1,5 @@
 const payrollMonth = document.getElementById('payrollMonth');
+const payrollYear = document.getElementById('payrollYear');
 const payrollResults = document.getElementById('payrollResults');
 const payrollStatus = document.getElementById('payrollStatus');
 const payrollImport = document.getElementById('payrollImport');
@@ -286,8 +287,29 @@ async function loadPayroll() {
 }
 
 const payrollCurrentMonth = new Date().toLocaleDateString('sv-SE', {timeZone:'Europe/Moscow'}).slice(0, 7);
-const [payrollYear, payrollMonthNumber] = payrollCurrentMonth.split('-').map(Number);
-payrollMonth.value = new Date(Date.UTC(payrollYear, payrollMonthNumber - 2, 1)).toISOString().slice(0, 7);
+const [currentYear, currentMonth] = payrollCurrentMonth.split('-').map(Number);
+const previousMonth = new Date(Date.UTC(currentYear, currentMonth - 2, 1));
+const payrollMonthNames = new Intl.DateTimeFormat('ru-RU', {month:'long',timeZone:'UTC'});
+
+function fillPayrollMonths(monthNumber) {
+  payrollMonth.replaceChildren();
+  for (let month = 1; month <= 12; month++) {
+    const label = payrollMonthNames.format(new Date(Date.UTC(Number(payrollYear.value),month - 1,1)));
+    const option = payrollElement(payrollMonth,'option',label[0].toLocaleUpperCase('ru') + label.slice(1));
+    option.value = `${payrollYear.value}-${String(month).padStart(2,'0')}`;
+  }
+  payrollMonth.selectedIndex = monthNumber - 1;
+}
+
+for (let year = currentYear; year >= 2000; year--) {
+  payrollElement(payrollYear,'option',String(year)).value = String(year);
+}
+payrollYear.value = String(previousMonth.getUTCFullYear());
+fillPayrollMonths(previousMonth.getUTCMonth() + 1);
+payrollYear.addEventListener('change', () => {
+  fillPayrollMonths(payrollMonth.selectedIndex + 1);
+  loadPayroll();
+});
 payrollMonth.addEventListener('change', loadPayroll);
 payrollSearch.addEventListener('input', renderPayrollRows);
 payrollImport.addEventListener('submit', async (event) => {
