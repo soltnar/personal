@@ -1,3 +1,4 @@
+import { validatePayroll, buildPayroll } from './payroll.mjs';
 import { summarizeAttendance, restrictRows, roleKeys } from './engine.mjs';
 import { readHistoryMetrics } from './history.mjs';
 import { readSabyIdentity } from './identity.ts';
@@ -37,6 +38,42 @@ Deno.serve(async(req)=>{
       email=String(user.email||'').trim().toLowerCase();admin=email===OWNER;
     }
     const url=new URL(req.url),resource=url.searchParams.get('resource');
+    if(resource==='payroll'){
+      const identity=saby ? `saby:${saby.subject}` : `google:${email}`;
+      let scope=['*'];
+      if(!admin){
+        const [grant]=await db(`personnel_payroll_access?select=identity&identity=eq.${encodeURIComponent(identity)}`);
+        if(!grant) return json({error:'Доступ к ФОТ не назначен'},403);
+        const points=await db(saby?`personnel_saby_access?select=restaurant&subject=eq.${encodeURIComponent(saby.subject)}`:`personnel_access?select=restaurant&email=eq.${encodeURIComponent(email)}`);
+        scope=points.map((row:{restaurant:string})=>row.restaurant).filter((point:string)=>point!=='*');
+        if(!scope.length) return json({error:'Доступ к ФОТ не назначен'},403);
+      }
+      if(req.method==='GET'&&url.searchParams.get('action')==='access') return json({canImport:admin});
+      const month=url.searchParams.get('month')||'';
+      if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month)) return json({error:'Выберите месяц'},400);
+      if(req.method==='POST'){
+        if(!admin) return json({error:'Импорт доступен владельцу'},403);
+        const raw=await req.text();
+        if(raw.length>2_000_000) return json({error:'Ведомость слишком большая'},413);
+        let input;
+        try {input=JSON.parse(raw);} catch {return json({error:'Некорректный формат ведомости'},400);}
+        const groups=validatePayroll(input?.groups);
+        if(!groups) return json({error:'Проверьте строки, суммы и идентификаторы ведомости'},400);
+        await db('personnel_payroll_months?on_conflict=month',{method:'POST',body:JSON.stringify({month,groups,updated_at:new Date().toISOString()})});
+        return json({ok:true});
+      }
+      if(req.method!=='GET') return json({error:'Метод не поддерживается'},405);
+      const [snapshot]=await db(`personnel_payroll_months?select=groups,updated_at&month=eq.${month}`);
+      if(!snapshot) return json({groups:[],canImport:admin});
+      const [year,number]=month.split('-').map(Number);
+      const count=new Date(Date.UTC(year,number,0)).getUTCDate();
+      const from=`${month}-01`,to=`${month}-${count}`;
+      const [days,sales]=await Promise.all([
+        pages(`attendance_daily_cache?select=work_date,rows&status=eq.ready&work_date=gte.${from}&work_date=lte.${to}&order=work_date.asc`),
+        pages(`revenue_entries?select=sale_date,restaurant,revenue&sale_date=gte.${from}&sale_date=lte.${to}&order=sale_date.asc,warehouse_id.asc`)
+      ]);
+      return json({groups:buildPayroll(snapshot.groups,days,sales,scope,count),canImport:admin,updatedAt:snapshot.updated_at});
+    }
     if(resource==='access'){
       if(!admin) return json({error:'Только администратор'},403);
       if(req.method==='GET') return json({grants:await pages('personnel_access?select=email,restaurant,roles,updated_at&order=email.asc,restaurant.asc')});

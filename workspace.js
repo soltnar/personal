@@ -2,6 +2,7 @@
 const workspaceViews = {
   overview: ['Обзор', 'ПОКАЗАТЕЛИ СЕТИ', 'Смены, выручка и выработка — всё главное за выбранный период.'],
   enterprises: ['По предприятиям', 'ДЕТАЛЬНЫЙ ОТЧЁТ', 'Выручка, смены и выработка по предприятиям.'],
+  payroll: ['ФОТ и смены', 'НАЧИСЛЕНИЯ', 'Сравните начисления, смены и выручку за выбранный месяц.'],
   quality: ['Проверка данных', 'ПОЛНОТА И КАЧЕСТВО', 'Найдите пропуски и неоднозначные отметки, прежде чем делать выводы.'],
   settings: ['Настройки', 'ДАННЫЕ И ПРИЛОЖЕНИЕ', 'Синхронизация проходной, правила расчёта и установка приложения.'],
   users: ['Пользователи и доступ', 'УПРАВЛЕНИЕ', 'Подключение Saby и права сотрудников по предприятиям и разделам.'],
@@ -41,6 +42,7 @@ function showWorkspace(view, focus = false) {
   document.getElementById('syncFrom').value=sabyFromInput.value;
   document.getElementById('syncTo').value=sabyToInput.value;
   document.querySelectorAll('[data-mobile-view]').forEach(link=>{if(link.dataset.mobileView===view)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});
+  if(view==='payroll'&&typeof loadPayroll==='function')loadPayroll();
   if(view==='users'&&workspaceIsOwner()&&typeof ensureAccessLoaded==='function')ensureAccessLoaded();
   if(typeof syncCompactToolbar==='function')syncCompactToolbar();
   setWorkspaceMenu(false);
@@ -53,9 +55,11 @@ function navigateWorkspace(view) {
 function syncWorkspaceProfile() {
   const saby = getSabySession(), user = revenueDbSession?.user;
   const identity = saby ? `saby:${saby.subject}` : user?.id || null;
-  const changed = workspaceIdentity !== null && workspaceIdentity !== identity;
+  const previousIdentity = workspaceIdentity;
+  const changed = previousIdentity !== null && previousIdentity !== identity;
   workspaceIdentity = identity;
   if(changed) clearScopedSession();
+  if(previousIdentity!==identity&&typeof syncPayrollAccess==='function')syncPayrollAccess(identity);
   const signedIn = !!identity, owner = workspaceIsOwner();
   const name = saby?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || 'Гость';
   const initials = signedIn ? name.split(/\s+/).filter(Boolean).slice(0,2).map(part => part[0]).join('').toUpperCase() : '?';
