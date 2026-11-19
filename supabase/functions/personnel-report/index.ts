@@ -1,6 +1,6 @@
 import { validatePayroll, buildPayroll } from './payroll.mjs';
 import { summarizeAttendance, restrictRows, roleKeys } from './engine.mjs';
-import { readHistoryMetrics } from './history.mjs';
+import { readHistoryMetrics, readPayrollDelivery } from './history.mjs';
 import { readSabyIdentity } from './identity.ts';
 const URL_BASE = Deno.env.get('SUPABASE_URL')!;
 const KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -72,7 +72,13 @@ Deno.serve(async(req)=>{
         pages(`attendance_daily_cache?select=work_date,rows&status=eq.ready&work_date=gte.${from}&work_date=lte.${to}&order=work_date.asc`),
         pages(`revenue_entries?select=sale_date,restaurant,revenue&sale_date=gte.${from}&sale_date=lte.${to}&order=sale_date.asc,warehouse_id.asc`)
       ]);
-      return json({groups:buildPayroll(snapshot.groups,days,sales,scope,count),canImport:admin,updatedAt:snapshot.updated_at});
+      const groups=buildPayroll(snapshot.groups,days,sales,scope,count);
+      let operatorDelivery=null;
+      if(groups.some(group=>group.categoryShifts.operators>0||group.employees.some(person=>person.category==='operators'))){
+        try{operatorDelivery=await readPayrollDelivery(from,to,key=>Deno.env.get(key));}
+        catch{console.error('Не удалось загрузить выручку доставки для ФОТ операторов');}
+      }
+      return json({groups,operatorDelivery,canImport:admin,updatedAt:snapshot.updated_at});
     }
     if(resource==='access'){
       if(!admin) return json({error:'Только администратор'},403);
