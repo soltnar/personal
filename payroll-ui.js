@@ -138,7 +138,9 @@ async function loadPayroll() {
       return;
     }
     renderPayroll(result.groups);
-    payrollStatus.textContent = '';
+    payrollStatus.textContent = payrollMonth.value >= payrollCurrentMonth
+      ? 'Текущий месяц: предварительные начисления по последней выгрузке СБИС.'
+      : '';
   } catch (error) {
     if (generation === payrollGeneration) payrollStatus.textContent = error.message;
   }
