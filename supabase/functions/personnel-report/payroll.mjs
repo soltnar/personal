@@ -1,4 +1,4 @@
-import { canonicalRestaurantName, summarizeAttendance } from './engine.mjs';
+import { canonicalRestaurantName, staffRoleKey, summarizeAttendance } from './engine.mjs';
 
 const nameKey = (value) => String(value ?? '').normalize('NFKC').toLowerCase().replace(/ё/g, 'е').trim().replace(/\s+/g, ' ');
 const validAmount = (value) => Number.isSafeInteger(value) && Math.abs(value) <= 100_000_000_000;
@@ -23,7 +23,8 @@ export function validatePayroll(groups) {
         const url = new URL(entry.link);
         if (url.protocol === 'https:' && ['online.saby.ru','online.sbis.ru'].includes(url.host) && !url.username && !url.password) link = url.href;
       } catch { /* Some exports omit the link. */ }
-      employees.push({id:entry.id.toLowerCase(), name:entry.name, accrual:entry.accrual, link});
+      if (entry.position != null && entry.position !== '' && !validText(entry.position)) return null;
+      employees.push({id:entry.id.toLowerCase(), name:entry.name, position:entry.position?.trim() || '', accrual:entry.accrual, link});
     }
     result.push({name:group.name, accrual:group.accrual, employees});
   }
@@ -85,17 +86,21 @@ export function buildPayroll(groups, days, sales, scope, expectedDays) {
     const firstHalf = canCount ? rows.filter(row => Number(row.dateIso.slice(-2)) <= 15).reduce((sum, row) => sum + row.total, 0) : null;
     const salesRows = rows.filter(row => Number.isFinite(row.revenue));
     const revenue = salesRows.length === expectedDays ? salesRows.reduce((sum, row) => sum + row.revenue, 0) : null;
+    const categoryTotals = {kitchen:0,hall:0,bar:0,delivery:0,operators:0,other:0};
+    const employees = group.employees.map(({id, name, position = '', accrual, link}) => {
+      const category = staffRoleKey(position, point) || 'other';
+      categoryTotals[category] += accrual;
+      const key = nameKey(name);
+      const records = complete && rows.length && links.has(key) ? employeeRows.get(key) || [] : [];
+      const local = records.filter(item => item.point === point);
+      const firstHalf = local.length ? local.filter(item => item.day <= 15).reduce((sum, item) => sum + item.shift, 0) : null;
+      const secondHalf = local.length ? local.filter(item => item.day > 15).reduce((sum, item) => sum + item.shift, 0) : null;
+      return {id, name, position, category, accrual, link, firstHalf, secondHalf, comparable:local.length > 0 && records.length === local.length};
+    });
     return {
       name:group.name, accrual:group.accrual, shifts, firstHalf, secondHalf:canCount ? shifts - firstHalf : null, revenue, revenueDays:salesRows.length,
-      unallocated:group.accrual - group.employees.reduce((sum, item) => sum + item.accrual, 0),
-      employees:group.employees.map(({id, name, accrual, link}) => {
-        const key = nameKey(name);
-        const records = complete && rows.length && links.has(key) ? employeeRows.get(key) || [] : [];
-        const local = records.filter(item => item.point === point);
-        const firstHalf = local.length ? local.filter(item => item.day <= 15).reduce((sum, item) => sum + item.shift, 0) : null;
-        const secondHalf = local.length ? local.filter(item => item.day > 15).reduce((sum, item) => sum + item.shift, 0) : null;
-        return {id, name, accrual, link, firstHalf, secondHalf, comparable:local.length > 0 && records.length === local.length};
-      }),
+      unallocated:group.accrual - Object.values(categoryTotals).reduce((sum, value) => sum + value, 0),
+      categoryTotals, employees,
     };
   });
 }

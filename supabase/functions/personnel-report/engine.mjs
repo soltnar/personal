@@ -256,6 +256,12 @@ function workedSecondsToShift(workedSeconds) {
 
 export const roleKeys = ["kitchen","hall","delivery","bar","operators"];
 const groups = {"Кухня":"kitchen","Зал":"hall","Доставка":"delivery","Бар":"bar"};
+
+export function staffRoleKey(position, restaurant) {
+  const role = groups[classifyRole(position)];
+  return restaurant === 'Коминтерна 166 CALL CENTRE' && role === 'hall' ? 'operators' : role;
+}
+
 export function summarizeAttendance(days, revenues, deliveryOrders = [], network = [], completeDates = []) {
   const result = new Map();
   const get = (dateIso,restaurant) => {
@@ -266,11 +272,10 @@ export function summarizeAttendance(days, revenues, deliveryOrders = [], network
   for (const day of days) {
     const people = new Map();
     for (const event of day.rows || []) {
-      const group = groups[classifyRole(event.position)];
       const key = String(event.personId || normalizeFio(event.person));
       if (!key) continue;
       if (!people.has(key)) people.set(key,[]);
-      people.get(key).push({...event,group});
+      people.get(key).push(event);
     }
     for (const events of people.values()) {
       events.sort((a,b)=>a.dateTime.localeCompare(b.dateTime));
@@ -281,7 +286,7 @@ export function summarizeAttendance(days, revenues, deliveryOrders = [], network
       const location = exit ? place(exit) : locations.size===1 ? [...locations][0] : "";
       const restaurant = location && !isNonRestaurantDepartment(location) ? location : "Подразделение не определено";
       const event = {...(exit || events.at(-1))};
-      if(restaurant==="Коминтерна 166 CALL CENTRE"&&event.group==="hall")event.group="operators";
+      event.group=staffRoleKey(event.position,restaurant);
       const worked = calcWorkedSeconds(events.map(e=>({direction:Number(e.actionType)===1?"Вход":"Выход",absSec:Date.parse(e.dateTime.replace(" ","T")+"+03:00")/1000})));
       const shift = events.length===1 ? 1 : workedSecondsToShift(worked);
       const row = get(day.work_date,restaurant);

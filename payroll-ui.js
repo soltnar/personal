@@ -3,6 +3,7 @@ const payrollResults = document.getElementById('payrollResults');
 const payrollStatus = document.getElementById('payrollStatus');
 const payrollImport = document.getElementById('payrollImport');
 const payrollNav = document.getElementById('payrollNav');
+const payrollCategories = {kitchen:'Кухня',hall:'Зал',bar:'Бар',delivery:'Доставка',operators:'Операторы',other:'Прочие должности'};
 const payrollMoney = new Intl.NumberFormat('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
 let payrollAccess = null;
 let payrollGeneration = 0;
@@ -65,7 +66,7 @@ function parsePayrollWorkbook(book) {
       groups.push(group);
     } else if (row[id] && level && group) {
       const cell = link >= 0 && sheet[XLSX.utils.encode_cell({r:index,c:link})];
-      group.employees.push({id:String(row[id]), name:title, accrual:payrollAmount(row[accrual]), link:String(cell?.l?.Target || row[link] || '')});
+      group.employees.push({id:String(row[id]), name:title, position:String(row[position] ?? '').trim(), accrual:payrollAmount(row[accrual]), link:String(cell?.l?.Target || row[link] || '')});
     } else if (!level || !group || row[position] || row[organization]) {
       throw new Error(`Не удалось определить подразделение в строке ${index + 1}.`);
     }
@@ -103,15 +104,34 @@ function renderPayroll(groups) {
       group.revenue > 0 ? fmt(group.accrual / group.revenue) + ' %' : '—', group.revenueDays]
       .forEach(value => payrollElement(row, 'td', value));
   }
+  const categories = Object.entries(payrollCategories);
+  payrollElement(payrollResults, 'h3', 'ФОТ по категориям');
+  const categoryTable = payrollTable(payrollResults, ['Подразделение', ...categories.map(([,label]) => label), 'Не распределено', 'Всего']);
+  const addCategoryRow = (label, items) => {
+    const row = categoryTable.insertRow();
+    payrollElement(row, 'th', label).scope = 'row';
+    const amounts = [
+      ...categories.map(([key]) => items.reduce((sum, group) => sum + (group.categoryTotals?.[key] ?? (key === 'other' ? group.accrual - group.unallocated : 0)), 0)),
+      items.reduce((sum, group) => sum + group.unallocated, 0),
+      items.reduce((sum, group) => sum + group.accrual, 0)
+    ];
+    amounts.forEach(amount => payrollElement(row, 'td', fmt(amount / 100)));
+  };
+  addCategoryRow('Итого', groups);
+  for (const group of groups) addCategoryRow(group.name, [group]);
+
   for (const group of groups) {
     const details = payrollElement(payrollResults, 'details', '');
     payrollElement(details, 'summary', `${group.name} · ${group.employees.length} сотрудников`);
     if (group.unallocated) payrollElement(details, 'p', `Разница с итогом подразделения: ${fmt(group.unallocated / 100)} ₽`);
-    const employees = payrollTable(details, ['Сотрудник','Начислено, ₽','Смены 1–15','Смены с 16','Начислено / смену, ₽','Карточка']);
-    for (const person of group.employees) {
+    const employees = payrollTable(details, ['Сотрудник','Должность','Категория','Начислено, ₽','Смены 1–15','Смены с 16','Начислено / смену, ₽','Карточка']);
+    const categoryOrder = Object.keys(payrollCategories);
+    const people = [...group.employees].sort((a,b) =>
+      categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category) || a.name.localeCompare(b.name,'ru'));
+    for (const person of people) {
       const row = employees.insertRow();
       const ratio = person.comparable ? person.accrual / 100 / (person.firstHalf + person.secondHalf) : null;
-      [person.name, fmt(person.accrual / 100), person.firstHalf ?? '—', person.secondHalf ?? '—', fmt(ratio)]
+      [person.name, person.position || '—', payrollCategories[person.category] || payrollCategories.other, fmt(person.accrual / 100), person.firstHalf ?? '—', person.secondHalf ?? '—', fmt(ratio)]
         .forEach(value => payrollElement(row, 'td', value));
       const cell = payrollElement(row, 'td', '');
       if (person.link) {
