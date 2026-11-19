@@ -36,7 +36,25 @@ function addIdentity(map, key, value) {
   map.get(key).add(value);
 }
 
-export function buildPayroll(groups, days, sales, scope, expectedDays) {
+function combineBelinskogoPayroll(groups) {
+  const point = 'Белинского, 61 Самурай';
+  const parts = new Set([point, 'Белинского, 61 доставка Самурай'].map(nameKey));
+  const combined = {name:point, accrual:0, employees:[]};
+  const result = [];
+  for (const group of groups) {
+    if (!parts.has(nameKey(group.name))) {
+      result.push(group);
+      continue;
+    }
+    if (!result.includes(combined)) result.push(combined);
+    combined.accrual += group.accrual;
+    combined.employees.push(...group.employees);
+  }
+  return result;
+}
+
+export function buildPayroll(sourceGroups, days, sales, scope, expectedDays) {
+  const groups = combineBelinskogoPayroll(sourceGroups);
   const names = new Map();
   const persons = new Map();
   const payrollNames = new Map();
