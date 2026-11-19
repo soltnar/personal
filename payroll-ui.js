@@ -154,9 +154,22 @@ function fillPayrollDetails(container, group, people, category, revenueData) {
     payrollElement(container,'p','В ведомости нет сотрудников этой категории.').className = 'hint';
     return;
   }
-  const employees = payrollTable(container, ['Сотрудник','Должность','Категория','Начислено','Смены 1–15','Смены с 16','Начислено / смену','']);
   const categoryOrder = Object.keys(payrollCategories);
-  for (const person of [...people].sort((a,b) => categoryOrder.indexOf(a.category)-categoryOrder.indexOf(b.category) || a.name.localeCompare(b.name,'ru'))) {
+  const sorted = [...people].sort((a,b) => categoryOrder.indexOf(a.category)-categoryOrder.indexOf(b.category) || a.name.localeCompare(b.name,'ru'));
+  const zero = person => person.accrual === 0 && !(person.firstHalf > 0 || person.secondHalf > 0);
+  const active = sorted.filter(person => !zero(person));
+  const inactive = sorted.filter(zero);
+  if (active.length) renderPayrollEmployees(container,active);
+  if (inactive.length) {
+    const hidden = payrollElement(container,'details','');
+    payrollElement(hidden,'summary',`Без начислений и смен · ${inactive.length}`);
+    renderPayrollEmployees(hidden,inactive);
+  }
+}
+
+function renderPayrollEmployees(container, people) {
+  const employees = payrollTable(container, ['Сотрудник','Должность','Категория','Начислено','Смены 1–15','Смены с 16','Начислено / смену','']);
+  for (const person of people) {
     const row = employees.insertRow();
     const ratio = person.comparable ? person.accrual / 100 / (person.firstHalf + person.secondHalf) : null;
     [person.name,person.position || '—',payrollCategories[person.category] || payrollCategories.other,payrollRubles(person.accrual / 100),

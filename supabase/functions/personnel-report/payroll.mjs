@@ -75,8 +75,15 @@ export function buildPayroll(sourceGroups, days, sales, scope, expectedDays, ide
   for (const [name, ids] of names) {
     const id = ids.values().next().value;
     if (ids.size !== 1 || payrollNames.get(name)?.size !== 1) continue;
-    const compatible = [...persons.get(id)].every(alias => names.get(alias).size === 1 &&
-      (alias === name || !payrollNames.has(alias) && alias.split(' ').length === 2 && name.startsWith(alias + ' ')));
+    const parts = name.split(' ');
+    const compatible = [...persons.get(id)].every(alias => {
+      if (names.get(alias).size !== 1) return false;
+      if (alias === name) return true;
+      if (payrollNames.has(alias)) return false;
+      const aliasParts = alias.split(' ');
+      return aliasParts.length === 2 && name.startsWith(alias + ' ') ||
+        parts.length >= 3 && aliasParts.slice(1).join(' ') === parts.slice(1).join(' ');
+    });
     if (!compatible) continue;
     links.set(name,id);
     for (const alias of persons.get(id)) aliases.set(alias,{name,id});
@@ -122,7 +129,7 @@ export function buildPayroll(sourceGroups, days, sales, scope, expectedDays, ide
     const uniquePoint = points.get(point).size === 1;
     const records = complete && links.has(key) && uniquePoint && !technicalStaff ? employeeRows.get(key) || [] : [];
     const {id,name,position='',accrual,link} = employee;
-    const category = technicalStaff ? 'other' : staffRoleKey(position,point) || 'other';
+    const category = technicalStaff || /отзыв/i.test(position) ? 'other' : staffRoleKey(position,point) || 'other';
     let firstHalf = records.length ? 0 : null;
     let secondHalf = firstHalf;
     for (const item of records) {
