@@ -68,11 +68,13 @@ Deno.serve(async(req)=>{
       const [year,number]=month.split('-').map(Number);
       const count=new Date(Date.UTC(year,number,0)).getUTCDate();
       const from=`${month}-01`,to=`${month}-${count}`;
-      const [days,sales]=await Promise.all([
+      const evidenceTo=new Date(Date.UTC(year,number,7)).toISOString().slice(0,10);
+      const [days,sales,identityDays]=await Promise.all([
         pages(`attendance_daily_cache?select=work_date,rows&status=eq.ready&work_date=gte.${from}&work_date=lte.${to}&order=work_date.asc`),
-        pages(`revenue_entries?select=sale_date,restaurant,revenue&sale_date=gte.${from}&sale_date=lte.${to}&order=sale_date.asc,warehouse_id.asc`)
+        pages(`revenue_entries?select=sale_date,restaurant,revenue&sale_date=gte.${from}&sale_date=lte.${to}&order=sale_date.asc,warehouse_id.asc`),
+        pages(`attendance_daily_cache?select=rows&status=eq.ready&work_date=gt.${to}&work_date=lte.${evidenceTo}&order=work_date.asc`).catch(()=>[])
       ]);
-      const groups=buildPayroll(snapshot.groups,days,sales,scope,count);
+      const groups=buildPayroll(snapshot.groups,days,sales,scope,count,identityDays);
       let operatorDelivery=null;
       if(groups.some(group=>group.categoryShifts.operators>0||group.employees.some(person=>person.category==='operators'))){
         try{operatorDelivery=await readPayrollDelivery(from,to,key=>Deno.env.get(key));}

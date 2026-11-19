@@ -1,6 +1,6 @@
 import { canonicalRestaurantName, roleKeys, staffRoleKey, summarizeAttendance } from './engine.mjs';
 
-const nameKey = (value) => String(value ?? '').normalize('NFKC').toLowerCase().replace(/ё/g, 'е').trim().replace(/\s+/g, ' ');
+const nameKey = (value) => String(value ?? '').normalize('NFKC').toLowerCase().replace(/ё/g, 'е').replace(/[-‐‑–—]/g, ' ').trim().replace(/\s+/g, ' ');
 const validAmount = (value) => Number.isSafeInteger(value) && Math.abs(value) <= 100_000_000_000;
 const validText = (value) => typeof value === 'string' && value.trim().length > 0 && value.length <= 250;
 
@@ -53,7 +53,7 @@ function combineBelinskogoPayroll(groups) {
   return result;
 }
 
-export function buildPayroll(sourceGroups, days, sales, scope, expectedDays) {
+export function buildPayroll(sourceGroups, days, sales, scope, expectedDays, identityDays = []) {
   const groups = combineBelinskogoPayroll(sourceGroups);
   const names = new Map();
   const persons = new Map();
@@ -63,7 +63,7 @@ export function buildPayroll(sourceGroups, days, sales, scope, expectedDays) {
     addIdentity(points, canonicalRestaurantName(group.name), group.name);
     for (const person of group.employees) addIdentity(payrollNames, nameKey(person.name), person.id);
   }
-  for (const day of days) for (const event of day.rows || []) {
+  for (const day of [...days,...identityDays]) for (const event of day.rows || []) {
     const name = nameKey(event.person);
     const id = String(event.personId || '');
     if (!name || !id) continue;
@@ -71,12 +71,22 @@ export function buildPayroll(sourceGroups, days, sales, scope, expectedDays) {
     addIdentity(persons, id, name);
   }
   const links = new Map();
+  const aliases = new Map();
   for (const [name, ids] of names) {
     const id = ids.values().next().value;
-    if (ids.size === 1 && persons.get(id).size === 1 && payrollNames.get(name)?.size === 1) links.set(name, id);
+    if (ids.size !== 1 || payrollNames.get(name)?.size !== 1) continue;
+    const compatible = [...persons.get(id)].every(alias => names.get(alias).size === 1 &&
+      (alias === name || !payrollNames.has(alias) && alias.split(' ').length === 2 && name.startsWith(alias + ' ')));
+    if (!compatible) continue;
+    links.set(name,id);
+    for (const alias of persons.get(id)) aliases.set(alias,{name,id});
   }
   const normalizedDays = days.map(day => ({
-    ...day, rows:(day.rows || []).map(event => event.personId ? event : {...event, personId:links.get(nameKey(event.person)) || ''})
+    ...day, rows:(day.rows || []).map(event => {
+      const alias=aliases.get(nameKey(event.person));
+      if (!alias || event.personId && String(event.personId)!==alias.id) return event;
+      return {...event, person:alias.name, personId:alias.id};
+    })
   }));
   const pointRows = new Map();
   const employeeRows = new Map();
