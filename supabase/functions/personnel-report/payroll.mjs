@@ -111,9 +111,10 @@ export function buildPayroll(sourceGroups, days, sales, scope, expectedDays) {
     const categoryShifts = Object.fromEntries(roleKeys.map(role => [
       role, canCount ? rows.reduce((sum, row) => sum + row[role], 0) : null,
     ]));
+    const technicalStaff = nameKey(group.name) === 'технический персонал';
     const categoryTotals = {kitchen:0,hall:0,bar:0,delivery:0,operators:0,other:0};
     const employees = group.employees.map(({id, name, position = '', accrual, link}) => {
-      const category = staffRoleKey(position, point) || 'other';
+      const category = technicalStaff ? 'other' : staffRoleKey(position, point) || 'other';
       categoryTotals[category] += accrual;
       const key = nameKey(name);
       const records = complete && rows.length && links.has(key) ? employeeRows.get(key) || [] : [];
