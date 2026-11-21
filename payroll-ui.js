@@ -131,11 +131,13 @@ function fillPayrollDetails(container, group, people, category, revenueData) {
     notes.push(`Смены за 1–15: ${payrollShifts(group.firstHalf)} · с 16 числа: ${payrollShifts(group.secondHalf)}`);
     if (group.unallocated) notes.push(`Не распределено по сотрудникам: ${payrollRubles(group.unallocated / 100)}`);
   }
-  const coverage = payrollCoverage(revenueData);
-  if (coverage) notes.push(coverage);
-  if (revenueData.observedRevenue != null) {
-    const label = category === 'operators' ? 'Выручка доставки всей сети' : 'Выручка точки';
-    notes.push(`${label}: ${payrollRubles(revenueData.observedRevenue)}`);
+  if (revenueData) {
+    const coverage = payrollCoverage(revenueData);
+    if (coverage) notes.push(coverage);
+    if (revenueData.observedRevenue != null) {
+      const label = category === 'operators' ? 'Выручка доставки всей сети' : 'Выручка точки';
+      notes.push(`${label}: ${payrollRubles(revenueData.observedRevenue)}`);
+    }
   }
   if (category === 'all' && group.categoryTotals) {
     const roles = Object.entries(payrollCategories).filter(([key]) => group.categoryTotals[key]);
@@ -190,13 +192,14 @@ function renderPayrollRows() {
   const category = payrollCategory;
   const all = category === 'all';
   const operators = category === 'operators';
+  const showRevenue = category !== 'other';
   const delivery = payrollOperatorDelivery || {revenueDays:0};
   document.getElementById('payrollCategoryTitle').textContent = all ? 'Все категории' : payrollCategories[category];
   const search = payrollSearch.value.trim().toLocaleLowerCase('ru').replace(/ё/g,'е');
   const rows = payrollRows.filter(group => group.name.toLocaleLowerCase('ru').replace(/ё/g,'е').includes(search))
     .map(group => ({
       group,
-      revenueData:operators ? delivery : group,
+      revenueData:showRevenue ? (operators ? delivery : group) : null,
       accrual:all ? group.accrual : group.categoryTotals?.[category] ?? 0,
       shifts:all ? group.shifts : group.categoryShifts?.[category] ?? null,
       people:all ? group.employees : group.employees.filter(person => person.category === category),
@@ -210,7 +213,7 @@ function renderPayrollRows() {
   totals.className = 'roleTotals payrollTotals';
   const shiftRows = rows.filter(row => row.shifts != null);
   const shiftTotal = shiftRows.reduce((sum,row) => sum + row.shifts,0);
-  const revenueFor = (group) => group.observedRevenue ?? group.revenue;
+  const revenueFor = (group) => group?.observedRevenue ?? group?.revenue;
   const comparable = rows.filter(row => revenueFor(row.revenueData) > 0);
   const revenueTotal = operators ? revenueFor(delivery) : comparable.reduce((sum,row) => sum + revenueFor(row.revenueData),0);
   const accrualTotal = rows.reduce((sum,row) => sum + row.accrual,0);
@@ -219,13 +222,15 @@ function renderPayrollRows() {
     ['Начислено',payrollRubles(accrualTotal / 100)],
     [shiftRows.length < rows.length ? 'Смены по точкам с данными' : 'Учтённые смены',payrollShifts(shiftRows.length ? shiftTotal : null)],
     ...(operators ? [['Выручка доставки сети',payrollRubles(revenueTotal)]] : []),
-    [all ? 'ФОТ / выручка · по точкам с выручкой' : operators ? 'ФОТ операторов / выручка доставки сети' : 'ФОТ категории / выручка её точек',percent(comparable.reduce((sum,row) => sum + row.accrual,0),revenueTotal)]
+    ...(showRevenue ? [[all ? 'ФОТ / выручка · по точкам с выручкой' : operators ? 'ФОТ операторов / выручка доставки сети' : 'ФОТ категории / выручка её точек',percent(comparable.reduce((sum,row) => sum + row.accrual,0),revenueTotal)]] : [])
   ]) {
     const item = payrollElement(totals,'div','');
     payrollElement(item,'strong',value);
     payrollElement(item,'span',label);
   }
-  const body = payrollTable(payrollResults,['Предприятие','Начислено','Смены','ФОТ / смену',operators ? 'Выручка доставки сети' : 'Выручка точки','ФОТ / выручка']);
+  const columns = ['Предприятие','Начислено','Смены','ФОТ / смену'];
+  if (showRevenue) columns.push(operators ? 'Выручка доставки сети' : 'Выручка точки','ФОТ / выручка');
+  const body = payrollTable(payrollResults,columns);
   body.closest('table').className = 'payrollSites';
   for (const {group,revenueData,accrual,shifts,people} of rows) {
     const row = body.insertRow();
@@ -235,7 +240,7 @@ function renderPayrollRows() {
     button.type = 'button';
     button.setAttribute('aria-expanded','false');
     payrollElement(button,'strong',group.name);
-    const coverage = payrollCoverage(revenueData);
+    const coverage = revenueData && payrollCoverage(revenueData);
     if (coverage && revenueData.revenueDays > 0) {
       const warning = payrollElement(button,'span','!');
       warning.className = 'qualityDot';
@@ -246,19 +251,21 @@ function renderPayrollRows() {
     const ratio = shifts > 0 ? accrual / 100 / shifts : null;
     [payrollRubles(accrual / 100),payrollShifts(shifts),payrollRubles(ratio)]
       .forEach(value => payrollElement(row,'td',value));
-    const revenueCell = payrollElement(row,'td',payrollRubles(revenueFor(revenueData)));
-    if (revenueData.revenueDays > 0 && revenueData.expectedDays && revenueData.revenueDays < revenueData.expectedDays) {
-      payrollElement(revenueCell,'small',`${revenueData.revenueDays} из ${revenueData.expectedDays} дней`).className = 'payrollCoverage';
-    }
-    const percentCell = payrollElement(row,'td',percent(accrual,revenueFor(revenueData)));
-    if (revenueData.revenue == null && revenueData.revenueDays > 0 && revenueData.expectedDays) {
-      payrollElement(percentCell,'small',`Выручка за ${revenueData.revenueDays} из ${revenueData.expectedDays} дней`).className = 'payrollCoverage';
+    if (revenueData) {
+      const revenueCell = payrollElement(row,'td',payrollRubles(revenueFor(revenueData)));
+      if (revenueData.revenueDays > 0 && revenueData.expectedDays && revenueData.revenueDays < revenueData.expectedDays) {
+        payrollElement(revenueCell,'small',`${revenueData.revenueDays} из ${revenueData.expectedDays} дней`).className = 'payrollCoverage';
+      }
+      const percentCell = payrollElement(row,'td',percent(accrual,revenueFor(revenueData)));
+      if (revenueData.revenue == null && revenueData.revenueDays > 0 && revenueData.expectedDays) {
+        payrollElement(percentCell,'small',`Выручка за ${revenueData.revenueDays} из ${revenueData.expectedDays} дней`).className = 'payrollCoverage';
+      }
     }
     const disclosure = body.insertRow();
     disclosure.hidden = true;
     disclosure.className = 'payrollDisclosure';
     const cell = disclosure.insertCell();
-    cell.colSpan = 6;
+    cell.colSpan = columns.length;
     button.onclick = () => {
       disclosure.hidden = !disclosure.hidden;
       button.setAttribute('aria-expanded',String(!disclosure.hidden));

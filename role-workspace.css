@@ -173,8 +173,8 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,s
 @media(max-width:600px){
   .payrollSites>thead th:first-child{width:64%}
   .payrollSites>thead th:last-child{width:36%}
-  .payrollSites>thead>tr>th:nth-child(n+2):nth-child(-n+5),
-  .payrollSites>tbody>tr:not(.payrollDisclosure)>td:nth-child(n+2):nth-child(-n+5){display:none!important}
+  .payrollSites>thead>tr>th:nth-child(n+2):not(:last-child),
+  .payrollSites>tbody>tr:not(.payrollDisclosure)>td:nth-child(n+2):not(:last-child){display:none!important}
 }
 .payrollBreakdown{display:flex;gap:8px 18px;flex-wrap:wrap;margin-bottom:12px}
 .payrollBreakdown small,.payrollBreakdown strong{display:block}
